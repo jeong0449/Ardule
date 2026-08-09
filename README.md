@@ -1,24 +1,29 @@
-# ADX Drum
+# Ardule Drum Patternology
 ## An Open Platform for Drum Patternology
 
 **Analyze • Abstract • Exchange • Play**
 
-ADX Drum is an **open cross-platform software ecosystem** for analyzing, abstracting, exchanging, and playing reusable drum patterns derived from Standard MIDI drum performances.
+**Ardule** is an **open cross-platform software ecosystem** for analyzing, abstracting, exchanging, and playing reusable drum patterns derived from Standard MIDI drum performances.
 
 ---
 
-## Why ADX?
+## Why Ardule?
 
-**ADX Drum** evolved from the **ADT/ADP** family drum pattern formats.
+The name **Ardule** originated from the combination of **Arduino** and **Module**, reflecting the project's roots in Arduino-based MIDI and sound module development.
 
-- **ADT** (*Ardule Drum Text*) is the human-readable drum pattern format.
-- **ADP** (*Ardule Drum Pattern*) is the compact binary-cache format generated from ADT for efficient storage and playback.
+The drum pattern system grew out of this hardware-oriented experimentation and eventually led to the **ADT/ADP** family of drum pattern formats.
 
-The name **ADX** originally referred to the ADT/ADP format family. As the project evolved beyond file formats into a complete software ecosystem—including MIDI analysis, pattern abstraction, format conversion, playback, and a pattern library—**ADX** naturally became the umbrella name for the platform.
+* **ADT** (*Ardule Drum Text*) is the human-readable drum pattern format.
+* **ADP** (*Ardule Drum Pattern*) is the compact binary-cache format generated from ADT for efficient storage and playback.
 
-The letter **X** is intentionally open-ended. It evokes ideas such as **eXchange**, **eXtensibility**, **Cross-platform compatibility**, and future **eXpansion**, reflecting the evolution of ADX from a family of file formats into an open software ecosystem.
+What began as a lightweight way to represent and play drum patterns gradually expanded into a broader software ecosystem encompassing **MIDI analysis, pattern abstraction, format conversion, visualization, playback, and pattern libraries**.
 
-Today, **ADX Drum** provides an integrated workflow for **analyzing, abstracting, exchanging, and playing** drum patterns.
+**Ardule Drum Patternology** brings these tools and formats together as an open platform for studying, transforming, exchanging, and playing drum patterns.
+
+Its core workflow is summarized as:
+
+**Analyze • Abstract • Exchange • Play**
+
 
 ---
 
