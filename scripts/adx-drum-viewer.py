@@ -37,14 +37,14 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 SCRIPT_NAME = "adx-drum-viewer.py"
-VERSION = "260807h"
+VERSION = "260810f"
 VERSION_TEXT = f"{SCRIPT_NAME} {VERSION}"
 ADT_VERSION_LINE = "; ADT v2.3"
 DEFAULT_SLOT_MAP = "LEGACY"
 DEFAULT_ORIENTATION = "STEP"
 DEFAULT_PPQN = 240
 INLINE_SLOT_MAP_ID = 255
-SUBDIV_CODE_TO_STR = {0: "16", 1: "8T", 2: "16T", 3: "32"}
+SUBDIV_CODE_TO_STR = {0: "16", 1: "32", 2: "8T", 3: "16T"}
 VALID_SUBDIV = set(SUBDIV_CODE_TO_STR.values())
 STEPS_PER_QUARTER = {"16": 4, "8T": 3, "16T": 6, "32": 8}
 BODY_OK = {".", "-", "x", "X", "o", "O", "^", "@"}
@@ -439,7 +439,7 @@ def load_orn(path: Path, pattern: Pattern) -> List[OrnamentEvent]:
         for part in parts[1:]:
             if "=" not in part: raise ValueError(f"{path.name}:{line_no}: malformed ORN field {part!r}")
             key, value = part.split("=", 1); fields[key.upper()] = value
-        if kind != "FLAM": raise ValueError(f"{path.name}:{line_no}: ORN v1.0 supports FLAM only")
+        if kind not in {"FLAM", "NOTE"}: raise ValueError(f"{path.name}:{line_no}: unsupported ORN event type {kind!r}; expected FLAM or NOTE")
         try:
             target_step, slot = int(fields["TARGET_STEP"]), slot_index(pattern, fields["SLOT"])
             offset_ticks, velocity = int(fields["OFFSET_TICKS"]), int(fields["VELOCITY"])
@@ -518,7 +518,37 @@ def card_dimensions(pattern: Pattern) -> Tuple[int, int]:
     return 345, 174
 
 
-def render_card(pattern: Pattern, x: float, y: float, width: int, height: int) -> str:
+def accent_index_for_velocity(velocity: int, accent_levels: Dict[int, AccentLevel]) -> int:
+    """Map a MIDI velocity to the configured non-rest accent level."""
+    for index, level in sorted(accent_levels.items()):
+        if index > 0 and level.min_velocity <= velocity <= level.max_velocity:
+            return index
+    non_rest = [index for index in sorted(accent_levels) if index > 0]
+    return non_rest[-1] if non_rest else 1
+
+
+def nearest_grid_for_timing(pattern: Pattern, event: OrnamentEvent) -> Tuple[int, int]:
+    """Return (nearest_step, signed residual ticks) for a NOTE timing event.
+
+    ORN NOTE events describe a real main hit that is off-grid.  For the catalog
+    we first place that hit on its nearest logical grid cell, then annotate the
+    remaining early/late displacement with a triangle.
+    """
+    ticks = step_ticks(pattern)
+    loop_ticks = pattern.length * ticks
+    actual = (event.target_step * ticks + event.offset_ticks) % loop_ticks
+    nearest = int(math.floor(actual / ticks + 0.5)) % pattern.length
+    grid_tick = nearest * ticks
+    residual = actual - grid_tick
+    if residual > loop_ticks / 2:
+        residual -= loop_ticks
+    elif residual < -loop_ticks / 2:
+        residual += loop_ticks
+    return nearest, int(round(residual))
+
+
+def render_card(pattern: Pattern, x: float, y: float, width: int, height: int,
+                accent_levels: Dict[int, AccentLevel]) -> str:
     left, top, bottom, right = 34, 38, 10, 4
     gx, gy, gw, gh = x + left, y + top, width - left - right, height - top - bottom
     cell_w, row_h = gw / pattern.length, gh / pattern.slot_count
@@ -543,7 +573,10 @@ def render_card(pattern: Pattern, x: float, y: float, width: int, height: int) -
                 # For longer even-length patterns, the same rule marks the pattern midpoint.
                 is_midbar = (0 < step < pattern.length and step * 2 == pattern.length)
                 line_class = "midbar" if is_midbar else "barline"
-                p.append(f'<line x1="{xx:.2f}" y1="{gy - 4}" x2="{xx:.2f}" y2="{gy + gh}" class="{line_class}"/>')
+                p.append(f'<line x1="{xx:.2f}" y1="{gy}" x2="{xx:.2f}" y2="{gy + gh}" class="{line_class}"/>')
+
+    # Reference-style outer frame: a light, even rectangle around the whole grid.
+    # The center bar boundary remains the strongest visual divider.
 
     display_slots = list(range(pattern.slot_count - 1, -1, -1)); display_row = {slot: row for row, slot in enumerate(display_slots)}
     for row, slot_index_ in enumerate(display_slots):
@@ -552,19 +585,88 @@ def render_card(pattern: Pattern, x: float, y: float, width: int, height: int) -
         p += [svg_text(gx - 5, yy + row_h * .68, label, "row", "end"),
               f'<line x1="{gx}" y1="{yy + row_h:.2f}" x2="{gx + gw}" y2="{yy + row_h:.2f}" class="rguide"/>']
 
-    orn_map: Dict[Tuple[int, int], List[OrnamentEvent]] = {}
-    for event in pattern.ornaments: orn_map.setdefault((event.target_step, event.slot), []).append(event)
-    for step_index, row in enumerate(pattern.steps):
+    # Build a display copy of the quantized pattern.  NOTE timing events are
+    # real main hits, not grace notes: if their nearest grid cell is empty,
+    # show a hit there using the ORN velocity-derived accent level.
+    display_steps = [row[:] for row in pattern.steps]
+    timing_positions: List[Tuple[OrnamentEvent, int, int]] = []
+    for event in pattern.ornaments:
+        if event.kind != "NOTE":
+            continue
+        nearest_step, residual = nearest_grid_for_timing(pattern, event)
+        timing_positions.append((event, nearest_step, residual))
+        if 0 <= event.slot < pattern.slot_count and display_steps[nearest_step][event.slot] == 0:
+            display_steps[nearest_step][event.slot] = accent_index_for_velocity(event.velocity, accent_levels)
+
+    # Main pattern cells (including NOTE events projected onto their nearest grid).
+    for step_index, row in enumerate(display_steps):
         for slot_index_, accent in enumerate(row):
             if not accent: continue
             yy = gy + display_row[slot_index_] * row_h; xx = gx + step_index * cell_w
             tooltip = f"step {step_index}; slot {slot_index_} {pattern.slots[slot_index_].abbrev}; accent {accent}"
             p.append(f'<rect x="{xx + .6:.2f}" y="{yy + .6:.2f}" width="{max(.6, cell_w - 1.2):.2f}" height="{max(.6, row_h - 1.2):.2f}" rx="1.2" class="cell accent{accent}"><title>{esc(tooltip)}</title></rect>')
-            events = orn_map.get((step_index, slot_index_), [])
-            if events:
-                marker = max(4., min(8., cell_w * .25, row_h * .35)); details = "; ".join(
-                    f"{e.kind} offset {e.offset_ticks}, velocity {e.velocity}" + (" loop-wrap" if e.loop_wrap else "") + (f", confidence {e.confidence}" if e.confidence else "") for e in events)
-                p.append(f'<rect x="{xx + 2.2:.2f}" y="{yy + 2.2:.2f}" width="{marker:.2f}" height="{marker:.2f}" rx=".7" class="ornmark"><title>{esc(details)}</title></rect>')
+
+    # Timing/ornament sidecar events are rendered in a separate pass.
+    # FLAM = an extra ornamental hit, shown as the traditional small white square.
+    # NOTE = the main hit itself is off-grid.  Its hit is projected to the nearest
+    #        grid above, and a triangle shows the residual early/late timing.
+    flam_map: Dict[Tuple[int, int], List[OrnamentEvent]] = {}
+    for event in pattern.ornaments:
+        if event.kind == "FLAM":
+            flam_map.setdefault((event.target_step, event.slot), []).append(event)
+
+    for (step_index, slot_index_), events in flam_map.items():
+        if not (0 <= step_index < pattern.length and slot_index_ in display_row):
+            continue
+        yy = gy + display_row[slot_index_] * row_h
+        xx = gx + step_index * cell_w
+        square = max(4., min(8., cell_w * .25, row_h * .35))
+        for event_index, e in enumerate(events):
+            detail = (f"{e.kind} offset {e.offset_ticks} ticks, velocity {e.velocity}"
+                      + (" loop-wrap" if e.loop_wrap else "")
+                      + (f", confidence {e.confidence}" if e.confidence else ""))
+            dx = 1.5 * event_index
+            dy = 1.2 * event_index
+            p.append(
+                f'<rect x="{xx + 2.2 + dx:.2f}" y="{yy + 2.2 + dy:.2f}" '
+                f'width="{square:.2f}" height="{square:.2f}" rx=".7" class="ornmark">'
+                f'<title>{esc(detail)}</title></rect>'
+            )
+
+    for e, step_index, residual in timing_positions:
+        if residual == 0 or e.slot not in display_row:
+            continue
+        slot_index_ = e.slot
+        yy = gy + display_row[slot_index_] * row_h
+        xx = gx + step_index * cell_w
+        tri_h = max(3.2, min(6.2, row_h * .42))
+        tri_w = max(2.8, min(5.4, cell_w * .22))
+        cy = yy + row_h * .50
+        detail = (f"NOTE microtiming {residual:+d} ticks from nearest grid "
+                  f"(source target {e.target_step}, raw offset {e.offset_ticks:+d}), velocity {e.velocity}"
+                  + (" loop-wrap" if e.loop_wrap else "")
+                  + (f", confidence {e.confidence}" if e.confidence else ""))
+        if residual < 0:
+            # Early note: triangle points left, beside the projected main hit.
+            x_tip = xx + 1.3
+            x_base = x_tip + tri_w
+            points = (f"{x_tip:.2f},{cy:.2f} "
+                      f"{x_base:.2f},{cy - tri_h / 2:.2f} "
+                      f"{x_base:.2f},{cy + tri_h / 2:.2f}")
+            cls = "timingmark early"
+        else:
+            # Late note: triangle points right, beside the projected main hit.
+            x_tip = xx + cell_w - 1.3
+            x_base = x_tip - tri_w
+            points = (f"{x_tip:.2f},{cy:.2f} "
+                      f"{x_base:.2f},{cy - tri_h / 2:.2f} "
+                      f"{x_base:.2f},{cy + tri_h / 2:.2f}")
+            cls = "timingmark late"
+        p.append(f'<polygon points="{points}" class="{cls}"><title>{esc(detail)}</title></polygon>')
+    # Draw the outer frame last so all four sides have identical visible weight.
+    # In particular, this prevents the final horizontal row guide from visually
+    # thinning the bottom border.
+    p.append(f'<rect x="{gx:.2f}" y="{gy:.2f}" width="{gw:.2f}" height="{gh:.2f}" class="gridframe"/>')
     p.append("</g>"); return "".join(p)
 
 
@@ -632,7 +734,7 @@ def render_html(patterns: Sequence[Pattern], title: str, accent_levels: Dict[int
             col, row = i % columns, i // columns
             x = page_margin_x + col * (card_w + gap_x)
             y = grid_top + row * (card_h + gap_y)
-            page_parts.append(render_card(pattern, x, y, card_w, card_h))
+            page_parts.append(render_card(pattern, x, y, card_w, card_h, accent_levels))
         footer_text = (
             f"Page {page_index + 1} of {page_count} · "
             f"{len(patterns)} patterns · Generated by {SCRIPT_NAME} {VERSION}"
@@ -670,10 +772,13 @@ body {{ font-family: Arial, Helvetica, sans-serif; }}
 .row {{ fill: #222; font-size: 7px; font-weight: 600; }}
 .guide, .rguide {{ stroke: #d8d8d8; stroke-width: .65; shape-rendering: crispEdges; }}
 .major {{ stroke: #9d9d9d; stroke-width: 1.1; }}
-.barline {{ stroke: #111; stroke-width: 2.4; opacity: .95; }}
+.barline {{ stroke: #777; stroke-width: .9; opacity: .95; }}
+.midbar {{ stroke: #111; stroke-width: 2.4; opacity: .95; }}
+.gridframe {{ fill: none; stroke: #777; stroke-width: .9; shape-rendering: crispEdges; }}
 .cell {{ stroke: none; }}
 {accent_css}
 .ornmark {{ fill: #fff; stroke: #111; stroke-width: .5; }}
+.timingmark {{ fill: #111; stroke: none; }}
 @media print {{
   html, body {{ background: #fff; }}
   .toolbar {{ display: none; }}
@@ -722,14 +827,36 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print(f"[ERROR] {exc}", file=sys.stderr); return 2
     if not primary_paths: print("[ERROR] no ADT or ADP files found", file=sys.stderr); return 2
     patterns: List[Pattern] = []; skipped = 0
+    orn_loaded = 0
+    orn_warnings = 0
     for path in primary_paths:
         try:
-            pattern = load_pattern(path, by_name, by_id, symbol_map); orn_path = find_orn(path)
-            if orn_path is not None: pattern.ornaments = load_orn(orn_path, pattern)
-            patterns.append(pattern); print(f"[OK] {path}" + (f" + {orn_path.name}" if orn_path else ""))
+            pattern = load_pattern(path, by_name, by_id, symbol_map)
         except (OSError, ValueError, struct.error) as exc:
-            skipped += 1; print(f"[SKIP] {path}: {exc}", file=sys.stderr)
+            skipped += 1
+            print(f"[SKIP] {path}: {exc}", file=sys.stderr)
             if args.strict: return 1
+            continue
+
+        orn_path = find_orn(path)
+        if orn_path is not None:
+            try:
+                pattern.ornaments = load_orn(orn_path, pattern)
+                orn_loaded += 1
+                flam_count = sum(1 for e in pattern.ornaments if e.kind == "FLAM")
+                timing_count = sum(1 for e in pattern.ornaments if e.kind == "NOTE")
+                print(f"[TIMING] {path}: timing detail loaded from {orn_path.name}: "
+                      f"{len(pattern.ornaments)} event(s) "
+                      f"(microtiming={timing_count}, flam={flam_count})")
+            except (OSError, ValueError, struct.error) as exc:
+                # A malformed or incompatible sidecar must not make the primary ADT/ADP
+                # disappear from HTML/PDF export. Keep the pattern and report the ORN issue.
+                orn_warnings += 1
+                print(f"[TIMING WARN] {path}: timing sidecar {orn_path.name} ignored: {exc}", file=sys.stderr)
+                if args.strict: return 1
+        else:
+            print(f"[OK] {path}")
+        patterns.append(pattern)
     if not patterns: print("[ERROR] no valid patterns to render", file=sys.stderr); return 1
     output = args.output or default_output(tokens, primary_paths); output.parent.mkdir(parents=True, exist_ok=True)
     default_title = patterns[0].name if len(patterns) == 1 else "ADX Pattern Catalog"
@@ -740,6 +867,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     print(f"[DONE] accent_levels={accent_levels_path} ({args.accent_scheme})")
     print(f"[DONE] processed={len(patterns)} pattern(s)")
     print(f"[DONE] rendered={len(patterns)}, skipped={skipped}")
+    print(f"[DONE] timing-detail files loaded={orn_loaded}, warnings={orn_warnings}")
     return 0 if skipped == 0 else 1
 
 
