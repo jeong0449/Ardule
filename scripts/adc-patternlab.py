@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""adc-patternlab.py 260810i"
+"""adc-patternlab.py 260810j"
 
 One MIDI -> self-contained interactive HTML/SVG whole-file drum matrix.
 Click the SVG to toggle RAW GM notes and two-bar SLOT_MAP display.
@@ -17,7 +17,7 @@ from adc_rhythm_analysis import (
     SUPPORTED_RESOLUTIONS, analyze_event_rhythm, detect_flams,
 )
 
-SCRIPT_NAME="adc-patternlab.py"; VERSION="260810i"; VERSION_TEXT=f"{SCRIPT_NAME} {VERSION}"
+SCRIPT_NAME="adc-patternlab.py"; VERSION="260810j"; VERSION_TEXT=f"{SCRIPT_NAME} {VERSION}"
 GHOST_CANDIDATE_MAX_VELOCITY=30
 if tuple(SUPPORTED_RESOLUTIONS) != ("16", "32", "8T", "16T"):
     raise RuntimeError(
@@ -685,17 +685,19 @@ const BLOCK_DATA={block_data_json};
 const ACCENT_SCHEMES={accent_levels_json};
 const TPQ={mid.ticks_per_beat};
 const SOURCE_STEM={json.dumps(path.stem)};const INFERRED_GENRE={json.dumps(inferred_genre)};const GENRE_FALLBACK={json.dumps(genre_fallback)};
+const PLAYBACK_BASE='http://127.0.0.1:8123';
+const playbackUrl=path=>PLAYBACK_BASE+path;
 let midiFilesLoaded=false;let libraryStartedAt=0;let libraryDuration=0;let libraryAnimation=null;let libraryCurrentId='';
 function formatTime(seconds){{if(!Number.isFinite(seconds)||seconds<0)return '—';const s=Math.floor(seconds);return `${{Math.floor(s/60)}}:${{String(s%60).padStart(2,'0')}}`;}}
 function switchTab(name){{document.querySelectorAll('.tab-button').forEach(b=>b.classList.toggle('active',b.dataset.tab===name));document.querySelectorAll('.tab-panel').forEach(p=>p.classList.toggle('active',p.id===`tab-${{name}}`));if(name==='midi'&&!midiFilesLoaded)loadMidiFiles();}}
 document.querySelectorAll('.tab-button').forEach(button=>button.addEventListener('click',()=>switchTab(button.dataset.tab)));
-async function checkService(){{const dot=document.getElementById('service-dot'),text=document.getElementById('service-text');try{{const r=await fetch('/api/midi-files',{{cache:'no-store'}});if(!r.ok)throw new Error();dot.classList.add('online');dot.classList.remove('offline');text.textContent='Playback service connected';}}catch(_e){{dot.classList.add('offline');dot.classList.remove('online');text.textContent='Playback service unavailable';}}}}
+async function checkService(){{const dot=document.getElementById('service-dot'),text=document.getElementById('service-text');try{{const r=await fetch(playbackUrl('/api/midi-files'),{{cache:'no-store'}});if(!r.ok)throw new Error();dot.classList.add('online');dot.classList.remove('offline');text.textContent='Playback service connected';}}catch(_e){{dot.classList.add('offline');dot.classList.remove('online');text.textContent='Playback service unavailable';}}}}
 function renderMidiFiles(files){{const list=document.getElementById('midi-list');list.innerHTML='';if(!files.length){{list.innerHTML='<div class="empty-message">No MID files in the allowed server directory.</div>';return;}}files.forEach(file=>{{if(!file||typeof file.id!=='string'||typeof file.name!=='string')return;const row=document.createElement('div');row.className='midi-row';row.dataset.fileId=file.id;row.innerHTML=`<div><div class="midi-name"></div><div class="midi-meta"></div></div><div class="midi-meta">${{formatTime(file.duration_seconds)}}</div><button class="midi-play" type="button">▶ Play</button>`;row.querySelector('.midi-name').textContent=file.name;row.querySelector('.midi-meta').textContent=`${{Math.max(1,Math.round(file.size/1024))}} KB`;row.querySelector('.midi-play').addEventListener('click',e=>{{e.stopPropagation();playLibraryFile(file.id,file.name,file.duration_seconds);}});row.addEventListener('dblclick',()=>playLibraryFile(file.id,file.name,file.duration_seconds));list.appendChild(row);}});}}
-async function loadMidiFiles(){{const list=document.getElementById('midi-list');list.innerHTML='<div class="empty-message">Loading MIDI files…</div>';try{{const r=await fetch('/api/midi-files',{{cache:'no-store'}});if(!r.ok)throw new Error(await r.text());const data=await r.json();renderMidiFiles(Array.isArray(data.files)?data.files:[]);midiFilesLoaded=true;checkService();}}catch(error){{list.innerHTML='<div class="empty-message">Playback service is unavailable. Start play_server.py and open this report through localhost.</div>';checkService();}}}}
+async function loadMidiFiles(){{const list=document.getElementById('midi-list');list.innerHTML='<div class="empty-message">Loading MIDI files…</div>';try{{const r=await fetch(playbackUrl('/api/midi-files'),{{cache:'no-store'}});if(!r.ok)throw new Error(await r.text());const data=await r.json();renderMidiFiles(Array.isArray(data.files)?data.files:[]);midiFilesLoaded=true;checkService();}}catch(error){{list.innerHTML='<div class="empty-message">Playback service is unavailable. Start play_server.py (or start-adx-playback.cmd).</div>';checkService();}}}}
 function updateLibraryProgress(){{if(!libraryStartedAt||!libraryDuration)return;const elapsed=(performance.now()-libraryStartedAt)/1000;const ratio=Math.max(0,Math.min(1,elapsed/libraryDuration));document.getElementById('library-progress-fill').style.width=`${{ratio*100}}%`;document.getElementById('library-time').textContent=`${{formatTime(elapsed)}} / ${{formatTime(libraryDuration)}}`;if(ratio<1)libraryAnimation=requestAnimationFrame(updateLibraryProgress);else stopLibraryVisual(false);}}
 function stopLibraryVisual(clearRows=true){{if(libraryAnimation){{cancelAnimationFrame(libraryAnimation);libraryAnimation=null;}}libraryStartedAt=0;document.getElementById('library-progress-fill').style.width='0%';if(clearRows)document.querySelectorAll('.midi-row').forEach(r=>r.classList.remove('playing'));}}
-async function playLibraryFile(fileId,name,knownDuration){{await stopPreview();try{{const r=await fetch('/play-file',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{id:fileId}})}});const data=await r.json();if(!r.ok)throw new Error(data.error||`HTTP ${{r.status}}`);libraryCurrentId=fileId;libraryDuration=Number(data.duration_seconds??knownDuration)||0;libraryStartedAt=performance.now();document.getElementById('library-file').textContent=String(data.name||name);document.querySelectorAll('.midi-row').forEach(row=>row.classList.toggle('playing',row.dataset.fileId===fileId));stopLibraryVisual(false);libraryStartedAt=performance.now();if(libraryDuration>0)updateLibraryProgress();else document.getElementById('library-time').textContent='Playing';}}catch(error){{alert('MIDI playback failed.\\n\\n'+error.message);}}}}
-async function stopLibraryPlayback(){{try{{await fetch('/stop',{{method:'POST'}});}}catch(_e){{}}stopLibraryVisual();document.getElementById('library-file').textContent='Nothing playing';document.getElementById('library-time').textContent='0:00 / 0:00';}}
+async function playLibraryFile(fileId,name,knownDuration){{await stopPreview();try{{const r=await fetch(playbackUrl('/play-file'),{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{id:fileId}})}});const data=await r.json();if(!r.ok)throw new Error(data.error||`HTTP ${{r.status}}`);libraryCurrentId=fileId;libraryDuration=Number(data.duration_seconds??knownDuration)||0;libraryStartedAt=performance.now();document.getElementById('library-file').textContent=String(data.name||name);document.querySelectorAll('.midi-row').forEach(row=>row.classList.toggle('playing',row.dataset.fileId===fileId));stopLibraryVisual(false);libraryStartedAt=performance.now();if(libraryDuration>0)updateLibraryProgress();else document.getElementById('library-time').textContent='Playing';}}catch(error){{alert('MIDI playback failed.\\n\\n'+error.message);}}}}
+async function stopLibraryPlayback(){{try{{await fetch(playbackUrl('/stop'),{{method:'POST'}});}}catch(_e){{}}stopLibraryVisual();document.getElementById('library-file').textContent='Nothing playing';document.getElementById('library-time').textContent='0:00 / 0:00';}}
 document.getElementById('refresh-midi').addEventListener('click',()=>{{midiFilesLoaded=false;loadMidiFiles();}});document.getElementById('library-stop').addEventListener('click',stopLibraryPlayback);checkService();
 function t(){{const v=s.classList.toggle('slotmode');m.textContent=v?(s.classList.contains('accentmode')?'GRID SLOT MAP · ACCENT':'GRID SLOT MAP · VELOCITY'):'RAW GM NOTES';slotDisplay.style.display=v?'inline-block':'none'}}
 function toggleSlotDisplay(){{const accent=s.classList.toggle('accentmode');slotDisplay.textContent=accent?'GRID: Accent':'GRID: Velocity';if(s.classList.contains('slotmode'))m.textContent=accent?'GRID SLOT MAP · ACCENT':'GRID SLOT MAP · VELOCITY';}}
@@ -810,7 +812,7 @@ function resetPreviewButton(){{
   previewTimeline=null;
 }}
 async function stopPreview(){{
-  try{{await fetch('/stop',{{method:'POST'}});}}catch(_e){{}}
+  try{{await fetch(playbackUrl('/stop'),{{method:'POST'}});}}catch(_e){{}}
   resetPreviewButton();
 }}
 function comparisonSections(data,compareMode){{
@@ -854,7 +856,7 @@ async function playComparison(panel){{
   preparePlaybackVisual(panel,compareMode);
   button.textContent='Connecting…';button.disabled=true;
   try{{
-    const response=await fetch('/play',{{method:'POST',headers:{{'Content-Type':'audio/midi'}},body:bytes}});
+    const response=await fetch(playbackUrl('/play'),{{method:'POST',headers:{{'Content-Type':'audio/midi'}},body:bytes}});
     const message=await response.text();
     if(!response.ok)throw new Error(message||`HTTP ${{response.status}}`);
     previewButton=button;button.textContent='■ Stop';button.classList.add('playing');
@@ -866,7 +868,7 @@ async function playComparison(panel){{
     previewEndTimer=setTimeout(resetPreviewButton,Math.ceil((totalSeconds+1.2)*1000));
   }}catch(error){{
     clearPlaybackVisual(panel);
-    alert('FluidSynth playback failed.\\n\\nStart play_server.py and open this report through http://127.0.0.1:8123/.\\n\\n'+error.message);
+    alert('FluidSynth playback failed.\\n\\nStart play_server.py (or start-adx-playback.cmd).\\n\\n'+error.message);
   }}finally{{
     button.disabled=false;
     if(!previewButton)button.textContent='▶ Play';
