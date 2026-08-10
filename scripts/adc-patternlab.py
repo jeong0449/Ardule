@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""adc-patternlab.py 260810ba
+"""adc-patternlab.py 260810i"
 
 One MIDI -> self-contained interactive HTML/SVG whole-file drum matrix.
 Click the SVG to toggle RAW GM notes and two-bar SLOT_MAP display.
@@ -17,7 +17,7 @@ from adc_rhythm_analysis import (
     SUPPORTED_RESOLUTIONS, analyze_event_rhythm, detect_flams,
 )
 
-SCRIPT_NAME="adc-patternlab.py"; VERSION="260810b"; VERSION_TEXT=f"{SCRIPT_NAME} {VERSION}"
+SCRIPT_NAME="adc-patternlab.py"; VERSION="260810i"; VERSION_TEXT=f"{SCRIPT_NAME} {VERSION}"
 GHOST_CANDIDATE_MAX_VELOCITY=30
 if tuple(SUPPORTED_RESOLUTIONS) != ("16", "32", "8T", "16T"):
     raise RuntimeError(
@@ -71,6 +71,14 @@ def infer_genre(filename: str) -> str:
         if token in codes:
             return token
     return "DRM"
+
+def genre_is_fallback(filename: str) -> bool:
+    """True only when no filename genre rule/code matched and DRM is merely fallback."""
+    stem=Path(filename).stem
+    if any(rx.search(stem) for rx,_code in GENRE_MAP):
+        return False
+    codes={code for code,_ in GENRES}
+    return not any(token in codes for token in re.findall(r"[A-Z0-9]+",stem.upper()))
 
 
 @dataclass(frozen=True)
@@ -352,14 +360,14 @@ def adx_hit_level(velocity):
 
 def reference_card(b,x,y,w=430,h=470,path=None):
     bars=str(b.bars[0].no) if len(b.bars)==1 else f'{b.bars[0].no}–{b.bars[-1].no}'
-    p=[f'<g class="block duplicate {"bad" if b.unknown else ""}"><rect x="{x}" y="{y}" width="{w}" height="{h}" rx="8" class="bg"/>']
+    p=[f'<g class="block duplicate {"bad" if b.unknown else ""}" data-block="{b.no}"><rect x="{x}" y="{y}" width="{w}" height="{h}" rx="8" class="bg"/>']
     p += [tx(x+16,y+28,f'B{b.no:03d}  bars {bars}',"title"),tx(x+w/2,y+105,f'Pattern #{b.pattern_no:03d}',"dup-pattern","middle"),tx(x+w/2,y+139,f'Same as B{b.duplicate_of:03d}',"dup-same","middle"),tx(x+w/2,y+169,f'ID {b.smap.id} {b.smap.name} · matrix omitted',"meta","middle"),tx(x+w/2,y+192,('MISSING NOTES: '+','.join(map(str,b.unknown))) if b.unknown else '',"warning","middle"),tx(x+16,y+248,'duplicate checked within this MIDI file only',"meta"),card_controls(path,b,x,y+264,w),'</g>']
     return ''.join(p)
 
 def ending_card(b,x,y,w=430,h=470,path=None):
     notes=', '.join(f'{e.note}({e.vel})' for e in b.events) or '(none)'
     bar=str(b.bars[0].no)
-    p=[f'<g class="block ending"><rect x="{x}" y="{y}" width="{w}" height="{h}" rx="8" class="bg"/>']
+    p=[f'<g class="block ending" data-block="{b.no}"><rect x="{x}" y="{y}" width="{w}" height="{h}" rx="8" class="bg"/>']
     p += [tx(x+16,y+28,f'B{b.no:03d}  bar {bar}',"title"),tx(x+w/2,y+100,'ENDING HIT',"ending-title","middle"),tx(x+w/2,y+134,'excluded from pattern catalog',"dup-same","middle"),tx(x+w/2,y+166,f'notes: {notes}',"meta","middle"),tx(x+16,y+248,'single onset group at the start of the final odd bar',"meta"),card_controls(path,b,x,y+264,w,disabled=True),'</g>']
     return ''.join(p)
 
@@ -568,7 +576,8 @@ def card_controls(path, b, x, y, w=430, disabled=False):
         "RAW note-on fit to the selected reference grid. "
         "Aligned means distance <= 5% of one grid step."
     )
-    genre_options=select_options([(code, f"{code} - {name}") for code,name in GENRES], default_genre)
+    genre_list_id=f"genre-list-{b.no}"
+    genre_datalist=''.join(f'<option value="{html.escape(code)}">{html.escape(name)}</option>' for code,name in GENRES)
     detected=b.subdiv.get("subdivision", "unknown")
     display_detected={
         "straight-16":"16",
@@ -599,7 +608,7 @@ def card_controls(path, b, x, y, w=430, disabled=False):
 <div xmlns="http://www.w3.org/1999/xhtml" class="pattern-controls" data-block="{b.no}" data-pattern-no="{b.pattern_no}" data-start-bar="{b.bars[0].no}" data-end-bar="{b.bars[-1].no}" data-time-sig="{html.escape("→".join(f"{bar.num}/{bar.den}" for bar in b.bars) if len({(bar.num,bar.den) for bar in b.bars}) > 1 else f"{b.bars[0].num}/{b.bars[0].den}")}" data-slot-map="{html.escape(b.smap.name)}" data-duplicate-of="{dup}">
 <div class="catalog-row">
 <label><input class="export-check" type="checkbox"{checked_export}{dis}/> Export</label>
-<label>Genre <select class="genre-select"{dis}>{genre_options}</select></label>
+<label>Genre <input class="genre-select" type="text" inputmode="text" maxlength="3" value="{html.escape(default_genre)}" list="{genre_list_id}" aria-label="Genre code"{dis}/><datalist id="{genre_list_id}">{genre_datalist}</datalist></label>
 <label><input class="orn-check" type="checkbox"{checked_orn}{dis}/> ORN</label>
 </div>
 <label class="number-label">No. <input class="start-number" type="text" inputmode="numeric" maxlength="4" placeholder="start" aria-label="Starting pattern number"{dis}/><output class="name-preview" aria-live="polite"></output></label>
@@ -615,7 +624,6 @@ def card_controls(path, b, x, y, w=430, disabled=False):
 <span class="stage-pill stage-6" data-stage="6">6</span>
 <span class="stage-pill stage-4" data-stage="4">4</span>
 </div>
-<button class="compare-midi" type="button"{dis}>Download MIDI</button>
 <div class="play-progress" aria-hidden="true"><span></span></div>
 </div>
 </div></foreignObject>'''
@@ -660,20 +668,23 @@ def render(path,mid,bars_,bb,skipped_leading_bars=0):
         for level in ACCENT_LEVELS["schemes"]["6-accent"]["levels"]
         if level["index"]>0
     )
+    inferred_genre=infer_genre(path.name)
+    genre_fallback=genre_is_fallback(path.name)
     return f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{html.escape(path.name)} — ADC PatternLab</title><style>
-:root{{--bg:#f4f6f8;--panel:#fff;--ink:#17202a;--muted:#65717e;--line:#d9dee4;--major:#9aa6b2;--raw:#1f6feb;--slot:#8a3ffc;--warn:#c2410c;--v0:#dbeafe;--v1:#93c5fd;--v2:#3b82f6;--v3:#1e3a8a;--h0:#fee2e2;--h1:#fecaca;--h2:#f87171;--h3:#dc2626;--h4:#7f1d1d}}@media(prefers-color-scheme:dark){{:root{{--bg:#11151a;--panel:#1a2027;--ink:#e6edf3;--muted:#9da9b5;--line:#303843;--major:#66717d;--raw:#58a6ff;--slot:#c297ff;--warn:#ff9b6a;--v0:#23395d;--v1:#2f6fab;--v2:#58a6ff;--v3:#b6d8ff;--h0:#4c1d1d;--h1:#7f1d1d;--h2:#b91c1c;--h3:#ef4444;--h4:#fca5a5}}}}*{{box-sizing:border-box}}body{{margin:0;font-family:system-ui,sans-serif;background:var(--bg);color:var(--ink)}}header{{position:sticky;top:0;z-index:1000;padding:14px 18px 12px;background:var(--panel);border-bottom:1px solid var(--line);box-shadow:0 3px 12px rgba(0,0,0,.14)}}h1{{margin:0 0 6px;font-size:20px}}.summary{{font-size:13px;color:var(--muted)}}button{{margin-top:8px;padding:7px 11px;border:1px solid var(--line);border-radius:7px;background:var(--panel);color:var(--ink);font-weight:700;cursor:pointer}}.legend{{margin-left:14px;font-size:12px;color:var(--muted)}}.lg{{display:inline-block;width:12px;height:12px;margin:0 3px 0 7px;vertical-align:-2px;border:1px solid var(--line)}}.v0{{background:var(--v0)}}.v1{{background:var(--v1)}}.v2{{background:var(--v2)}}.v3{{background:var(--v3)}}.h0{{background:var(--h0)}}.h1{{background:var(--h1)}}.h2{{background:var(--h2)}}.h3{{background:var(--h3)}}.h4{{background:var(--h4)}}main{{overflow:auto;padding:12px}}svg{{display:block;cursor:pointer;user-select:none}}.bg{{fill:var(--panel);stroke:var(--line)}}.bad .bg{{stroke:var(--warn);stroke-width:2}}.title{{fill:var(--ink);font-size:13px;font-weight:750}}.meta{{fill:var(--muted);font-size:10px}}.sid{{fill:var(--slot);font-size:12px;font-weight:800}}.warning{{fill:var(--warn);font-size:10px;font-weight:800}}.row{{fill:var(--ink);font-size:8.5px}}.guide,.rguide{{stroke:var(--line);stroke-width:.7}}.major{{stroke:var(--major);stroke-width:1.45}}.barline{{stroke:var(--ink);stroke-width:2.1;opacity:.72}}.hit{{opacity:1}}.rawduration{{stroke-width:1.4;stroke-linecap:round;opacity:.72}}.rawhit{{stroke:var(--panel);stroke-width:.8}}.unknown-row{{fill:#dc2626!important;font-weight:800}}.deviation-aligned.rawhit{{fill:#2563eb}}.deviation-near.rawhit{{fill:#0891b2}}.deviation-moderate.rawhit{{fill:#f59e0b}}.deviation-far.rawhit{{fill:#dc2626}}.deviation-aligned.rawduration{{stroke:#2563eb}}.deviation-near.rawduration{{stroke:#0891b2}}.deviation-moderate.rawduration{{stroke:#f59e0b}}.deviation-far.rawduration{{stroke:#dc2626}}.ghost{{stroke:var(--ink);stroke-width:1;stroke-dasharray:2 1}}.flamgrace{{stroke-width:1.5;stroke-dasharray:none;opacity:1}}.flammain{{stroke-width:.8}}.ornnote{{fill:#7c3aed!important;stroke:#4c1d95!important;stroke-width:1.2!important;stroke-dasharray:none!important}}.ornduration{{stroke:#7c3aed!important;opacity:.95!important}}.slothit{{fill:var(--slot)}}.slotcell{{stroke:var(--panel);stroke-width:.35}}.velocity0{{fill:var(--v0)}}.velocity1{{fill:var(--v1)}}.velocity2{{fill:var(--v2)}}.velocity3{{fill:var(--v3)}}svg.accentmode .slotcell.hitstrength0{{fill:var(--h0)}}svg.accentmode .slotcell.hitstrength1{{fill:var(--h1)}}svg.accentmode .slotcell.hitstrength2{{fill:var(--h2)}}svg.accentmode .slotcell.hitstrength3{{fill:var(--h3)}}svg.accentmode .slotcell.hitstrength4{{fill:var(--h4)}}.unknown{{fill:var(--warn);stroke:var(--panel)}}.subdiv-layer{{display:none}}.subdiv-layer.active{{display:inline}}.slot{{display:none}}svg.slotmode .raw{{display:none}}svg.slotmode .slot{{display:inline}}details{{margin:0 18px 18px;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--panel)}}.pattern-controls-wrap{{overflow:visible}}.pattern-controls{{height:194px;display:flex;flex-direction:column;gap:5px;padding:6px 8px;border-top:1px solid var(--line);font:11px system-ui,sans-serif;color:var(--ink);background:var(--panel)}}.pattern-controls label{{display:flex;align-items:center;gap:4px;white-space:nowrap;min-width:0}}.pattern-controls select,.pattern-controls input[type=text]{{min-width:0;padding:3px 4px;border:1px solid var(--line);border-radius:5px;background:var(--panel);color:var(--ink);font-size:10.5px}}.catalog-row{{display:grid;grid-template-columns:70px 1fr 52px;gap:7px;align-items:center}}.catalog-row .genre-select{{width:100%}}.pattern-controls .number-label{{height:25px}}.pattern-controls .start-number{{width:62px}}.pattern-controls .name-preview{{min-width:92px;font-weight:800;color:var(--slot)}}.timing-fit{{display:flex;align-items:center;gap:5px;min-height:17px;white-space:nowrap;color:var(--muted);font-size:10px}}.timing-fit strong{{color:var(--ink)}}.fit-item{{padding:1px 3px;border-radius:4px}}.fit-item.selected{{background:var(--bg);color:var(--ink);font-weight:800;outline:1px solid var(--line)}}.fit-best{{margin-left:auto;color:var(--slot);font-weight:800}}.playback-box{{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:31px 28px 22px 7px;gap:4px 7px;padding-top:4px;border-top:1px solid var(--line)}}.pattern-controls .play-compare{{grid-column:1 / 3;margin:0;padding:6px 8px;font-size:11px;background:var(--slot);color:#fff;border-color:var(--slot)}}.playback-settings{{grid-column:1 / 3;display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:center}}.playback-settings label{{display:grid;grid-template-columns:auto 1fr;gap:4px}}.playback-settings select{{width:100%}}.play-stage{{grid-column:1 / 2;display:flex;align-items:center;gap:4px;min-width:0}}.stage-pill{{display:inline-flex;align-items:center;justify-content:center;min-width:29px;height:19px;padding:0 7px;border:1px solid var(--line);border-radius:999px;background:var(--panel);color:var(--muted);font-size:10px;font-weight:800;opacity:.55;transition:opacity .15s,background .15s,color .15s,transform .15s}}.stage-pill.unused{{display:none}}.stage-pill.active{{opacity:1;color:#fff;transform:translateY(-1px)}}.stage-raw.active{{background:#2563eb;border-color:#2563eb}}.stage-6.active{{background:#7c3aed;border-color:#7c3aed}}.stage-4.active{{background:#dc2626;border-color:#dc2626}}.play-progress{{grid-column:1 / 3;height:6px;overflow:hidden;border-radius:999px;background:var(--line)}}.play-progress span{{display:block;width:0;height:100%;background:var(--slot);transition:width .08s linear}}.pattern-controls .compare-midi{{grid-column:2 / 3;grid-row:3;margin:0;padding:3px 7px;font-size:10.5px;background:var(--panel);color:var(--ink);border-color:var(--line)}}.pattern-controls .play-compare.playing{{background:var(--warn);border-color:var(--warn)}}.pattern-controls .invalid{{border-color:var(--warn)!important;outline:1px solid var(--warn)}}#current-pattern{{display:inline-block;margin-left:10px;padding:3px 8px;border:1px solid var(--line);border-radius:999px;color:var(--muted);font-size:11px;font-weight:700}}#number-status{{display:inline-block;margin-left:10px;font-size:12px;color:var(--muted)}}#number-status.error{{color:var(--warn);font-weight:700}}input[type=checkbox]{{width:16px;height:16px}}
+:root{{--bg:#f4f6f8;--panel:#fff;--ink:#17202a;--muted:#65717e;--line:#d9dee4;--major:#9aa6b2;--raw:#1f6feb;--slot:#8a3ffc;--warn:#c2410c;--v0:#dbeafe;--v1:#93c5fd;--v2:#3b82f6;--v3:#1e3a8a;--h0:#fee2e2;--h1:#fecaca;--h2:#f87171;--h3:#dc2626;--h4:#7f1d1d}}@media(prefers-color-scheme:dark){{:root{{--bg:#11151a;--panel:#1a2027;--ink:#e6edf3;--muted:#9da9b5;--line:#303843;--major:#66717d;--raw:#58a6ff;--slot:#c297ff;--warn:#ff9b6a;--v0:#23395d;--v1:#2f6fab;--v2:#58a6ff;--v3:#b6d8ff;--h0:#4c1d1d;--h1:#7f1d1d;--h2:#b91c1c;--h3:#ef4444;--h4:#fca5a5}}}}*{{box-sizing:border-box}}body{{margin:0;font-family:system-ui,sans-serif;background:var(--bg);color:var(--ink)}}header{{position:sticky;top:0;z-index:1000;padding:14px 18px 12px;background:var(--panel);border-bottom:1px solid var(--line);box-shadow:0 3px 12px rgba(0,0,0,.14)}}h1{{margin:0 0 6px;font-size:20px}}.summary{{font-size:13px;color:var(--muted)}}button{{margin-top:8px;padding:7px 11px;border:1px solid var(--line);border-radius:7px;background:var(--panel);color:var(--ink);font-weight:700;cursor:pointer}}.legend{{margin-left:14px;font-size:12px;color:var(--muted)}}.lg{{display:inline-block;width:12px;height:12px;margin:0 3px 0 7px;vertical-align:-2px;border:1px solid var(--line)}}.v0{{background:var(--v0)}}.v1{{background:var(--v1)}}.v2{{background:var(--v2)}}.v3{{background:var(--v3)}}.h0{{background:var(--h0)}}.h1{{background:var(--h1)}}.h2{{background:var(--h2)}}.h3{{background:var(--h3)}}.h4{{background:var(--h4)}}main{{overflow:auto;padding:12px}}svg{{display:block;cursor:pointer;user-select:none}}.bg{{fill:var(--panel);stroke:var(--line)}}.bad .bg{{stroke:var(--warn);stroke-width:2}}.title{{fill:var(--ink);font-size:13px;font-weight:750}}.meta{{fill:var(--muted);font-size:10px}}.sid{{fill:var(--slot);font-size:12px;font-weight:800}}.warning{{fill:var(--warn);font-size:10px;font-weight:800}}.row{{fill:var(--ink);font-size:8.5px}}.guide,.rguide{{stroke:var(--line);stroke-width:.7}}.major{{stroke:var(--major);stroke-width:1.45}}.barline{{stroke:var(--ink);stroke-width:2.1;opacity:.72}}.hit{{opacity:1}}.rawduration{{stroke-width:1.4;stroke-linecap:round;opacity:.72}}.rawhit{{stroke:var(--panel);stroke-width:.8}}.unknown-row{{fill:#dc2626!important;font-weight:800}}.deviation-aligned.rawhit{{fill:#2563eb}}.deviation-near.rawhit{{fill:#0891b2}}.deviation-moderate.rawhit{{fill:#f59e0b}}.deviation-far.rawhit{{fill:#dc2626}}.deviation-aligned.rawduration{{stroke:#2563eb}}.deviation-near.rawduration{{stroke:#0891b2}}.deviation-moderate.rawduration{{stroke:#f59e0b}}.deviation-far.rawduration{{stroke:#dc2626}}.ghost{{stroke:var(--ink);stroke-width:1;stroke-dasharray:2 1}}.flamgrace{{stroke-width:1.5;stroke-dasharray:none;opacity:1}}.flammain{{stroke-width:.8}}.ornnote{{fill:#7c3aed!important;stroke:#4c1d95!important;stroke-width:1.2!important;stroke-dasharray:none!important}}.ornduration{{stroke:#7c3aed!important;opacity:.95!important}}.slothit{{fill:var(--slot)}}.slotcell{{stroke:var(--panel);stroke-width:.35}}.velocity0{{fill:var(--v0)}}.velocity1{{fill:var(--v1)}}.velocity2{{fill:var(--v2)}}.velocity3{{fill:var(--v3)}}svg.accentmode .slotcell.hitstrength0{{fill:var(--h0)}}svg.accentmode .slotcell.hitstrength1{{fill:var(--h1)}}svg.accentmode .slotcell.hitstrength2{{fill:var(--h2)}}svg.accentmode .slotcell.hitstrength3{{fill:var(--h3)}}svg.accentmode .slotcell.hitstrength4{{fill:var(--h4)}}.unknown{{fill:var(--warn);stroke:var(--panel)}}.subdiv-layer{{display:none}}.subdiv-layer.active{{display:inline}}.slot{{display:none}}svg.slotmode .raw{{display:none}}svg.slotmode .slot{{display:inline}}details{{margin:0 18px 18px;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--panel)}}.pattern-controls-wrap{{overflow:visible}}.pattern-controls{{height:194px;display:flex;flex-direction:column;gap:5px;padding:6px 8px;border-top:1px solid var(--line);font:11px system-ui,sans-serif;color:var(--ink);background:var(--panel)}}.pattern-controls label{{display:flex;align-items:center;gap:4px;white-space:nowrap;min-width:0}}.pattern-controls select,.pattern-controls input[type=text]{{min-width:0;padding:3px 4px;border:1px solid var(--line);border-radius:5px;background:var(--panel);color:var(--ink);font-size:10.5px}}.catalog-row{{display:grid;grid-template-columns:70px 1fr 52px;gap:7px;align-items:center}}.catalog-row .genre-select{{width:100%;text-transform:uppercase}}.pattern-controls .number-label{{height:25px}}.pattern-controls .start-number{{width:62px}}.pattern-controls .name-preview{{min-width:92px;font-weight:800;color:var(--slot)}}.timing-fit{{display:flex;align-items:center;gap:5px;min-height:17px;white-space:nowrap;color:var(--muted);font-size:10px}}.timing-fit strong{{color:var(--ink)}}.fit-item{{padding:1px 3px;border-radius:4px}}.fit-item.selected{{background:var(--bg);color:var(--ink);font-weight:800;outline:1px solid var(--line)}}.fit-best{{margin-left:auto;color:var(--slot);font-weight:800}}.playback-box{{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:31px 28px 22px;gap:4px 7px;padding-top:4px;border-top:1px solid var(--line)}}.pattern-controls .play-compare{{grid-column:1 / 3;margin:0;padding:6px 8px;font-size:11px;background:var(--slot);color:#fff;border-color:var(--slot)}}.playback-settings{{grid-column:1 / 3;display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:center}}.playback-settings label{{display:grid;grid-template-columns:auto 1fr;gap:4px}}.playback-settings select{{width:100%}}.play-stage{{grid-column:1 / 2;display:flex;align-items:center;gap:4px;min-width:0}}.stage-pill{{display:inline-flex;align-items:center;justify-content:center;min-width:29px;height:19px;padding:0 7px;border:1px solid var(--line);border-radius:999px;background:var(--panel);color:var(--muted);font-size:10px;font-weight:800;opacity:.55;transition:opacity .15s,background .15s,color .15s,transform .15s}}.stage-pill.unused{{display:none}}.stage-pill.active{{opacity:1;color:#fff;transform:translateY(-1px)}}.stage-raw.active{{background:#2563eb;border-color:#2563eb}}.stage-6.active{{background:#7c3aed;border-color:#7c3aed}}.stage-4.active{{background:#dc2626;border-color:#dc2626}}.play-progress{{grid-column:1 / 3;grid-row:3;height:6px;overflow:hidden;border-radius:999px;background:var(--line)}}.play-progress span{{display:block;width:0;height:100%;background:var(--slot);transition:width .08s linear}}.pattern-controls .play-compare.playing{{background:var(--warn);border-color:var(--warn)}}.pattern-controls .invalid{{border-color:var(--warn)!important;outline:1px solid var(--warn)}}#current-pattern{{display:inline-block;margin-left:10px;padding:3px 8px;border:1px solid var(--line);border-radius:999px;color:var(--muted);font-size:11px;font-weight:700}}#number-status{{display:inline-block;margin-left:10px;font-size:12px;color:var(--muted)}}#number-status.error{{color:var(--warn);font-weight:700}}input[type=checkbox]{{width:16px;height:16px}}
 
 .header-top{{display:flex;align-items:flex-start;justify-content:space-between;gap:18px}}.brand h1{{margin:0;font-size:20px;line-height:1.15}}.brand-sub{{margin-top:3px;color:var(--muted);font-size:11px}}.header-state{{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}}.mode-badge{{padding:4px 9px;border-radius:999px;background:var(--bg);border:1px solid var(--line);font-size:11px;font-weight:800}}.summary{{margin-top:7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}.header-actions{{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:9px;padding-top:8px;border-top:1px solid var(--line)}}.tabs,.action-buttons,.service-area{{display:flex;align-items:center;gap:6px;flex-wrap:wrap}}.tab-button{{margin:0;padding:6px 11px;background:transparent}}.tab-button.active{{background:var(--ink);border-color:var(--ink);color:var(--panel)}}.header-actions button{{margin:0}}.service-dot{{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--major)}}.service-dot.online{{background:#16a34a}}.service-dot.offline{{background:#dc2626}}.service-text{{font-size:11px;color:var(--muted)}}.legend-panel{{margin:0;padding:0;border:0;background:transparent}}.legend-panel summary{{cursor:pointer;font-size:11px;font-weight:700;color:var(--muted);list-style:none}}.legend-panel summary::-webkit-details-marker{{display:none}}.legend-content{{position:absolute;right:18px;top:100%;width:min(680px,calc(100vw - 36px));padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--panel);box-shadow:0 8px 24px rgba(0,0,0,.18);font-size:11px;color:var(--muted);line-height:1.7}}.tab-panel{{display:none}}.tab-panel.active{{display:block}}.midi-browser{{max-width:900px;margin:18px auto;padding:18px;border:1px solid var(--line);border-radius:12px;background:var(--panel)}}.midi-toolbar{{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px}}.midi-toolbar h2{{margin:0;font-size:18px}}.midi-list{{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:8px;overflow:hidden}}.midi-row{{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:12px;align-items:center;padding:10px 12px;border-bottom:1px solid var(--line);cursor:pointer}}.midi-row:last-child{{border-bottom:0}}.midi-row:hover,.midi-row.playing{{background:var(--bg)}}.midi-name{{font-weight:750;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}.midi-meta{{font-size:11px;color:var(--muted)}}.midi-play{{margin:0;padding:5px 10px}}.library-player{{margin-top:14px;padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--bg)}}.library-now{{display:flex;justify-content:space-between;gap:12px;font-size:12px}}.library-progress{{height:8px;margin-top:9px;overflow:hidden;border-radius:999px;background:var(--line)}}.library-progress span{{display:block;width:0;height:100%;background:var(--slot)}}.library-controls{{display:flex;gap:8px;margin-top:8px}}.library-controls button{{margin:0}}.empty-message{{padding:18px;text-align:center;color:var(--muted)}}
+.genre-modal-backdrop{{position:fixed;inset:0;z-index:5000;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.48)}}.genre-modal-backdrop[hidden]{{display:none}}.genre-modal{{width:min(440px,calc(100vw - 32px));padding:18px;border:1px solid var(--line);border-radius:12px;background:var(--panel);box-shadow:0 18px 48px rgba(0,0,0,.28)}}.genre-modal h2{{margin:0 0 7px;font-size:18px}}.genre-modal p{{margin:0 0 12px;color:var(--muted);font-size:12px;line-height:1.5}}.genre-modal label{{display:grid;grid-template-columns:auto 1fr;gap:8px;align-items:center;font-size:12px;font-weight:700}}.genre-modal select,.genre-modal input{{width:100%;padding:7px;border:1px solid var(--line);border-radius:7px;background:var(--panel);color:var(--ink);text-transform:uppercase}}.genre-modal-hint{{margin-top:8px!important;font-size:10.5px!important}}.genre-modal-actions{{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}}.number-gap-title{{fill:var(--warn)!important}}
 </style></head><body><header>
 <div class="header-top"><div class="brand"><h1>{html.escape(path.name)}</h1><div class="brand-sub">ADC PatternLab · {VERSION}</div></div><div class="header-state"><span id="current-pattern">Viewing: —</span><strong id="mode" class="mode-badge">RAW GM NOTES</strong></div></div>
 <div class="summary" title="{header_summary}">{header_summary}</div>
 <div class="header-actions"><div class="tabs"><button class="tab-button active" data-tab="analysis" type="button">Pattern Analysis</button><button class="tab-button" data-tab="midi" type="button">MIDI Files</button></div><div class="action-buttons"><button id="toggle">RAW / QUANTIZED</button><button id="slot-display" type="button" class="quantized-only">Velocity / Accent</button><button id="download-csv" type="button">Download CSV</button><span id="number-status"></span></div><div class="service-area"><span id="service-dot" class="service-dot"></span><span id="service-text" class="service-text">Checking playback service…</span><details class="legend-panel"><summary>Legend ▾</summary><div class="legend-content"><div>Velocity: <i class="lg v0"></i>0 (1–31) <i class="lg v1"></i>1 (32–63) <i class="lg v2"></i>2 (64–95) <i class="lg v3"></i>3 (96–127)</div><div>ADX 6-accent: {accent_legend}</div><div>RAW grid: <i class="lg" style="background:#2563eb"></i>aligned <i class="lg" style="background:#0891b2"></i>near <i class="lg" style="background:#f59e0b"></i>moderate <i class="lg" style="background:#dc2626"></i>far</div><div>RAW: <i class="lg" style="background:#7c3aed;border-color:#4c1d95"></i>ORN candidate · red label = outside SLOT_MAP</div></div></details></div></div>
-</header><section id="tab-analysis" class="tab-panel active"><main><svg id="matrix" xmlns="http://www.w3.org/2000/svg" width="{sw}" height="{sh}" viewBox="0 0 {sw} {sh}">{''.join(body)}</svg></main><details><summary>Analysis notes</summary><p>Each block is checked only against earlier blocks in the same MIDI file. Pattern identity uses only relative onset tick and raw MIDI note. Velocity and note duration are ignored. A repeated block keeps its original Pattern number and omits the matrix drawing.</p><p>A final odd bar containing only one onset group at its beginning is labeled ENDING HIT and excluded from the pattern catalog.</p><p>Each card initially uses the automatically detected resolution. Its own Resolution selector can immediately switch the reference grid and SLOT quantization among 16, 32, 8T, and 16T without affecting other cards. Reloading the HTML restores the original automatic selections. Grid fit is a separate visual diagnostic: for each candidate grid it reports the percentage of RAW note-on events that fall within 5% of one grid step from the nearest line. Best marks the highest such percentage, with mean normalized error used only to break ties. It does not overwrite the shared rhythm-analysis decision.</p><p>If no SLOT_MAP covers every note, the nearest map is used, the card receives a red border, and uncovered MIDI notes are listed as MISSING NOTES. Ties fall back conservatively toward lower IDs, beginning with LEGACY 12.</p><p>RAW view places every note-on circle at its original MIDI tick position and extends a horizontal line to the recorded note-off position. Very short durations receive a two-pixel minimum display line; the note-on position itself is never moved. The vertical subdivision lines are reference overlays only; changing a card’s Resolution selector never moves RAW notes. Velocity controls circle size. RAW note colors indicate distance from the nearest line of the currently selected resolution and are recalculated independently for each card whenever its Resolution selector changes. Notes that currently trigger automatic ORN candidacy are shown in purple, overriding deviation color: velocity ≤ 30 ghost candidates and the grace note of each detected flam pair. Hovering a purple note shows the exact reason, including velocity threshold or flam confidence, tick gap, threshold, and whether the grace is removed from subdivision. Flam main hits remain blue because they stay in the ADX grid.</p><p>The report has two tabs: Pattern Analysis and Local MIDI Files. The MIDI Files tab obtains a restricted list of immediate, non-symlink MID files from the local playback service. The browser receives opaque IDs rather than filesystem paths and plays selected files through the configured FluidSynth/SF2 backend. In SLOT view, each retained hit fills its complete on-grid cell. The Play button sends the MIDI generated from the current Compare Mode directly to the local PatternLab playback service, which uses the configured FluidSynth executable and SF2 SoundFont. The GRID display button switches between the original four-band MIDI Velocity view and the ADX 6-accent preview. Each non-duplicate card can play or download exactly the sequence selected in Compare Mode: RAW only, RAW → 6, RAW → 4, or RAW → 6 → 4. Every included section is repeated twice, and adjacent sections are separated by one quarter-note beat. ADX Accent uses the five playable levels of the JSON-defined 6-accent scheme. The displayed symbol, label, velocity range, and representative velocity come from accent_levels.json; an empty cell represents Rest. Flam grace notes marked for removal from subdivision are intentionally omitted there and belong to ORN; the main hit remains in the grid. Ghost candidates that are not classified as removable flam grace notes remain visible. Only note-ons that already lie exactly on the selected grid are shown in SLOT view; off-grid note-ons are never snapped into a cell. When multiple retained on-grid hits occupy one slot/cell, the strongest velocity is shown.</p><p>SLOT_MAP usage: <code>{html.escape(json.dumps(summary,ensure_ascii=False))}</code></p><p>The shared adc_rhythm_analysis module owns the complete subdivision decision: flam detection, grace-note exclusion, onset phase, note-duration evidence, and conservative filename hints. The same flam-filtered events are used for both phase and duration scoring. Beat anchors and the shared half-beat remain excluded from phase evidence.</p></details></section><section id="tab-midi" class="tab-panel"><div class="midi-browser"><div class="midi-toolbar"><div><h2>Local MIDI Files</h2><div class="midi-meta">Allowed local MIDI directory · paths are not exposed to the browser</div></div><button id="refresh-midi" type="button">Refresh</button></div><div id="midi-list" class="midi-list"><div class="empty-message">Open this tab to load the MIDI file list.</div></div><div class="library-player"><div class="library-now"><strong id="library-file">Nothing playing</strong><span id="library-time">0:00 / 0:00</span></div><div class="library-progress"><span id="library-progress-fill"></span></div><div class="library-controls"><button id="library-stop" type="button">■ Stop</button></div></div></div></section><script>(()=>{{
+</header><div id="genre-modal-backdrop" class="genre-modal-backdrop" hidden><div class="genre-modal" role="dialog" aria-modal="true" aria-labelledby="genre-modal-title"><h2 id="genre-modal-title">Select genre</h2><p>The filename did not identify a genre, so PatternLab fell back to DRM. Type a 3-character genre code to apply to all pattern cards.</p><label>Genre code <input id="genre-modal-code" type="text" inputmode="text" maxlength="3" placeholder="e.g. SKA" autocomplete="off"/></label><p class="genre-modal-hint">Enter a 3-character genre code. It will be added to every card for this report.</p><div class="genre-modal-actions"><button id="genre-modal-apply" type="button">Apply to all cards</button></div></div></div><section id="tab-analysis" class="tab-panel active"><main><svg id="matrix" xmlns="http://www.w3.org/2000/svg" width="{sw}" height="{sh}" viewBox="0 0 {sw} {sh}">{''.join(body)}</svg></main><details><summary>Analysis notes</summary><p>Each block is checked only against earlier blocks in the same MIDI file. Pattern identity uses only relative onset tick and raw MIDI note. Velocity and note duration are ignored. A repeated block keeps its original Pattern number and omits the matrix drawing.</p><p>A final odd bar containing only one onset group at its beginning is labeled ENDING HIT and excluded from the pattern catalog.</p><p>Each card initially uses the automatically detected resolution. Its own Resolution selector can immediately switch the reference grid and SLOT quantization among 16, 32, 8T, and 16T without affecting other cards. Reloading the HTML restores the original automatic selections. Grid fit is a separate visual diagnostic: for each candidate grid it reports the percentage of RAW note-on events that fall within 5% of one grid step from the nearest line. Best marks the highest such percentage, with mean normalized error used only to break ties. It does not overwrite the shared rhythm-analysis decision.</p><p>If no SLOT_MAP covers every note, the nearest map is used, the card receives a red border, and uncovered MIDI notes are listed as MISSING NOTES. Ties fall back conservatively toward lower IDs, beginning with LEGACY 12.</p><p>RAW view places every note-on circle at its original MIDI tick position and extends a horizontal line to the recorded note-off position. Very short durations receive a two-pixel minimum display line; the note-on position itself is never moved. The vertical subdivision lines are reference overlays only; changing a card’s Resolution selector never moves RAW notes. Velocity controls circle size. RAW note colors indicate distance from the nearest line of the currently selected resolution and are recalculated independently for each card whenever its Resolution selector changes. Notes that currently trigger automatic ORN candidacy are shown in purple, overriding deviation color: velocity ≤ 30 ghost candidates and the grace note of each detected flam pair. Hovering a purple note shows the exact reason, including velocity threshold or flam confidence, tick gap, threshold, and whether the grace is removed from subdivision. Flam main hits remain blue because they stay in the ADX grid.</p><p>The report has two tabs: Pattern Analysis and Local MIDI Files. The MIDI Files tab obtains a restricted list of immediate, non-symlink MID files from the local playback service. The browser receives opaque IDs rather than filesystem paths and plays selected files through the configured FluidSynth/SF2 backend. In SLOT view, each retained hit fills its complete on-grid cell. The Play button sends the MIDI generated from the current Compare Mode directly to the local PatternLab playback service, which uses the configured FluidSynth executable and SF2 SoundFont. The GRID display button switches between the original four-band MIDI Velocity view and the ADX 6-accent preview. Each non-duplicate card can play or download exactly the sequence selected in Compare Mode: RAW only, RAW → 6, RAW → 4, or RAW → 6 → 4. Every included section is repeated twice, and adjacent sections are separated by one quarter-note beat. ADX Accent uses the five playable levels of the JSON-defined 6-accent scheme. The displayed symbol, label, velocity range, and representative velocity come from accent_levels.json; an empty cell represents Rest. Flam grace notes marked for removal from subdivision are intentionally omitted there and belong to ORN; the main hit remains in the grid. Ghost candidates that are not classified as removable flam grace notes remain visible. Only note-ons that already lie exactly on the selected grid are shown in SLOT view; off-grid note-ons are never snapped into a cell. When multiple retained on-grid hits occupy one slot/cell, the strongest velocity is shown.</p><p>SLOT_MAP usage: <code>{html.escape(json.dumps(summary,ensure_ascii=False))}</code></p><p>The shared adc_rhythm_analysis module owns the complete subdivision decision: flam detection, grace-note exclusion, onset phase, note-duration evidence, and conservative filename hints. The same flam-filtered events are used for both phase and duration scoring. Beat anchors and the shared half-beat remain excluded from phase evidence.</p></details></section><section id="tab-midi" class="tab-panel"><div class="midi-browser"><div class="midi-toolbar"><div><h2>Local MIDI Files</h2><div class="midi-meta">Allowed local MIDI directory · paths are not exposed to the browser</div></div><button id="refresh-midi" type="button">Refresh</button></div><div id="midi-list" class="midi-list"><div class="empty-message">Open this tab to load the MIDI file list.</div></div><div class="library-player"><div class="library-now"><strong id="library-file">Nothing playing</strong><span id="library-time">0:00 / 0:00</span></div><div class="library-progress"><span id="library-progress-fill"></span></div><div class="library-controls"><button id="library-stop" type="button">■ Stop</button></div></div></div></section><script>(()=>{{
 const s=document.getElementById('matrix'),m=document.getElementById('mode'),slotDisplay=document.getElementById('slot-display');slotDisplay.style.display='none';
 const BLOCK_DATA={block_data_json};
 const ACCENT_SCHEMES={accent_levels_json};
 const TPQ={mid.ticks_per_beat};
-const SOURCE_STEM={json.dumps(path.stem)};
+const SOURCE_STEM={json.dumps(path.stem)};const INFERRED_GENRE={json.dumps(inferred_genre)};const GENRE_FALLBACK={json.dumps(genre_fallback)};
 let midiFilesLoaded=false;let libraryStartedAt=0;let libraryDuration=0;let libraryAnimation=null;let libraryCurrentId='';
 function formatTime(seconds){{if(!Number.isFinite(seconds)||seconds<0)return '—';const s=Math.floor(seconds);return `${{Math.floor(s/60)}}:${{String(s%60).padStart(2,'0')}}`;}}
 function switchTab(name){{document.querySelectorAll('.tab-button').forEach(b=>b.classList.toggle('active',b.dataset.tab===name));document.querySelectorAll('.tab-panel').forEach(p=>p.classList.toggle('active',p.id===`tab-${{name}}`));if(name==='midi'&&!midiFilesLoaded)loadMidiFiles();}}
@@ -861,33 +872,48 @@ async function playComparison(panel){{
     if(!previewButton)button.textContent='▶ Play';
   }}
 }}
-function downloadComparison(panel){{
-  const data=BLOCK_DATA[String(panel.dataset.block)];if(!data){{alert('Comparison MIDI is unavailable for this card.');return}}
-  const subdiv=panel.querySelector('.subdivision-select')?.value||'16';
-  const compareMode=panel.querySelector('.compare-mode-select')?.value||'both';
-  const bytes=makeComparisonMidi(data,subdiv,compareMode);const blob=new Blob([bytes],{{type:'audio/midi'}});
-  const a=document.createElement('a');a.href=URL.createObjectURL(blob);const modeTag={{raw:'RAW','6':'RAW-6','4':'RAW-4',both:'RAW-6-4'}}[compareMode]||'RAW-6-4';
-  a.download=`${{SOURCE_STEM}}_B${{String(panel.dataset.block).padStart(3,'0')}}_${{subdiv}}_${{modeTag}}.MID`;
-  document.body.appendChild(a);a.click();setTimeout(()=>{{URL.revokeObjectURL(a.href);a.remove()}},0);
-}}
 function allPanels(){{return [...document.querySelectorAll('.pattern-controls')]}}
-function exportedPanels(){{
+function numberablePanels(){{
   return allPanels().filter(panel=>{{
-    const exp=panel.querySelector('.export-check');
-    return exp && !exp.disabled && exp.checked;
+    const input=panel.querySelector('.start-number');
+    return input && !input.disabled;
   }});
+}}
+function cardTitle(panel){{
+  const card=document.querySelector(`g.block[data-block="${{panel.dataset.block}}"]`) ||
+             document.querySelector(`g.pattern-card[data-block="${{panel.dataset.block}}"]`);
+  return card?.querySelector('.title')||null;
+}}
+function clearNumberGapTitles(){{
+  allPanels().forEach(panel=>{{
+    const title=cardTitle(panel);
+    if(!title)return;
+    if(title.dataset.baseText===undefined)title.dataset.baseText=title.textContent||'';
+    title.textContent=title.dataset.baseText;
+    title.classList.remove('number-gap-title');
+  }});
+}}
+function markNumberGap(panel){{
+  const title=cardTitle(panel);
+  if(!title)return;
+  if(title.dataset.baseText===undefined)title.dataset.baseText=title.textContent||'';
+  title.textContent=title.dataset.baseText+' · ⚠ NO NUMBER';
+  title.classList.add('number-gap-title');
 }}
 function clearCalculated(){{
   allPanels().forEach(panel=>{{
     panel.dataset.patternName='';
-    panel.querySelector('.name-preview').textContent='';
+    const preview=panel.querySelector('.name-preview');
+    if(preview)preview.textContent='';
     const input=panel.querySelector('.start-number');
+    if(!input)return;
     input.classList.remove('invalid');
     if(input.dataset.auto==='1'){{
       input.value='';
       delete input.dataset.auto;
     }}
   }});
+  clearNumberGapTitles();
 }}
 function updateStatus(errors, count){{
   const status=document.getElementById('number-status');
@@ -903,58 +929,129 @@ function updateStatus(errors, count){{
   }}
 }}
 function calculateNames(showAlert=false){{
-  clearCalculated();
-  const panels=exportedPanels();
-  const byGenre=new Map();
-  panels.forEach(panel=>{{
-    const genre=panel.querySelector('.genre-select').value;
-    if(!byGenre.has(genre))byGenre.set(genre,[]);
-    byGenre.get(genre).push(panel);
+  // Every manually typed number is an anchor.  Auto-filled values are disposable.
+  const candidates=numberablePanels();
+  const manualBeforeClear=candidates.filter(panel=>{{
+    const input=panel.querySelector('.start-number');
+    return input.value.trim()!=='' && input.dataset.auto!=='1';
   }});
+  const manualValues=new Map(
+    manualBeforeClear.map(panel=>[panel,panel.querySelector('.start-number').value.trim()])
+  );
+
+  clearCalculated();
+  manualValues.forEach((value,panel)=>{{panel.querySelector('.start-number').value=value;}});
+
   const errors=[];
-  const names=new Set();
-  if(panels.length===0)errors.push('No patterns are selected for export.');
-  byGenre.forEach((group,genre)=>{{
-    const manual=group.filter(panel=>{{
-      const input=panel.querySelector('.start-number');
-      return input.value.trim()!=='' && input.dataset.auto!=='1';
-    }});
-    if(manual.length===0){{errors.push(`${{genre}}: enter a starting number in the first exported card.`);return;}}
-    if(manual.length>1){{
-      manual.forEach(panel=>panel.querySelector('.start-number').classList.add('invalid'));
-      errors.push(`${{genre}}: starting numbers appear in more than one exported card.`);return;
-    }}
-    if(manual[0]!==group[0]){{
-      manual[0].querySelector('.start-number').classList.add('invalid');
-      errors.push(`${{genre}}: enter the starting number in block ${{group[0].dataset.block}}.`);return;
-    }}
-    const input=manual[0].querySelector('.start-number');
+  if(manualBeforeClear.length===0){{updateStatus([],0);return true;}}
+
+  // Validate every manual anchor first.
+  const anchors=[];
+  manualBeforeClear.forEach(panel=>{{
+    const input=panel.querySelector('.start-number');
     const raw=input.value.trim();
-    if(!/^\\d{{1,4}}$/.test(raw)){{
-      input.classList.add('invalid');errors.push(`${{genre}}: use an integer from 1 to 9999.`);return;
+    if(!/^\d{{1,4}}$/.test(raw)){{
+      input.classList.add('invalid');
+      errors.push(`B${{String(panel.dataset.block).padStart(3,'0')}}: use an integer from 1 to 9999.`);
+      return;
     }}
-    const first=Number(raw);
-    if(first<1 || first>9999 || first+group.length-1>9999){{
-      input.classList.add('invalid');errors.push(`${{genre}}: numbering must remain within 0001–9999.`);return;
+    const value=Number(raw);
+    if(value<1 || value>9999){{
+      input.classList.add('invalid');
+      errors.push(`B${{String(panel.dataset.block).padStart(3,'0')}}: use 0001–9999.`);
+      return;
     }}
-    group.forEach((panel,index)=>{{
-      const number=first+index;
+    anchors.push({{panel,index:candidates.indexOf(panel),value}});
+  }});
+
+  if(errors.length){{
+    updateStatus(errors,0);
+    if(showAlert)alert('Cannot download CSV:\\n\\n'+errors.join('\\n'));
+    return false;
+  }}
+
+  anchors.sort((a,b)=>a.index-b.index);
+
+  // Only cards before the first anchor are an error/gap.
+  const firstAnchorIndex=anchors[0].index;
+  for(let i=0;i<firstAnchorIndex;i++)markNumberGap(candidates[i]);
+  if(firstAnchorIndex>0){{
+    errors.push(`${{firstAnchorIndex}} earlier card(s) have no number.`);
+  }}
+
+  const names=new Set();
+  let readyCount=0;
+
+  // Each anchor controls its own segment until the next manual anchor.
+  for(let a=0;a<anchors.length;a++){{
+    const anchor=anchors[a];
+    const segmentEnd=(a+1<anchors.length)?anchors[a+1].index:candidates.length;
+    const segmentLength=segmentEnd-anchor.index;
+
+    if(anchor.value+segmentLength-1>9999){{
+      const input=anchor.panel.querySelector('.start-number');
+      input.classList.add('invalid');
+      errors.push(`B${{String(anchor.panel.dataset.block).padStart(3,'0')}}: numbering exceeds 9999.`);
+      continue;
+    }}
+
+    for(let i=anchor.index;i<segmentEnd;i++){{
+      const panel=candidates[i];
+      const number=anchor.value+(i-anchor.index);
       const padded=String(number).padStart(4,'0');
       const numberInput=panel.querySelector('.start-number');
-      if(index>0){{numberInput.value=padded;numberInput.dataset.auto='1';}}
+
+      numberInput.value=padded;
+      if(i===anchor.index){{
+        delete numberInput.dataset.auto;   // this is a persistent manual anchor
+      }}else{{
+        numberInput.dataset.auto='1';      // recalculated from the preceding anchor
+      }}
+
+      // Genre never affects number propagation; it is used only when forming NAME.
+      const genre=panel.querySelector('.genre-select')?.value||'DRM';
       const name=`${{genre}}_${{padded}}`;
       panel.dataset.patternName=name;
-      panel.querySelector('.name-preview').textContent=name;
+      const preview=panel.querySelector('.name-preview');
+      if(preview)preview.textContent=name;
+
       if(names.has(name)){{
         numberInput.classList.add('invalid');
         errors.push(`Duplicate NAME: ${{name}}.`);
       }}
       names.add(name);
-    }});
-  }});
-  updateStatus(errors,panels.length);
+      readyCount++;
+    }}
+  }}
+
+  updateStatus(errors,readyCount);
   if(errors.length && showAlert)alert('Cannot download CSV:\\n\\n'+errors.join('\\n'));
   return errors.length===0;
+}}
+function setGenreCode(input,code){{
+  input.value=String(code||'').toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,3);
+}}
+function setupFallbackGenreDialog(){{
+  if(!GENRE_FALLBACK)return;
+  const backdrop=document.getElementById('genre-modal-backdrop');
+  const codeInput=document.getElementById('genre-modal-code');
+  const apply=document.getElementById('genre-modal-apply');
+  if(!backdrop||!codeInput||!apply)return;
+  backdrop.hidden=false;
+  codeInput.focus();
+  codeInput.addEventListener('input',()=>{{codeInput.value=codeInput.value.toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,3);codeInput.classList.remove('invalid');}});
+  const applyGenre=()=>{{
+    const code=codeInput.value.trim().toUpperCase();
+    if(!/^[A-Z0-9]{{3}}$/.test(code)){{codeInput.classList.add('invalid');return;}}
+    allPanels().forEach(panel=>{{
+      const genreInput=panel.querySelector('.genre-select');
+      if(genreInput&&!genreInput.disabled)setGenreCode(genreInput,code);
+    }});
+    backdrop.hidden=true;
+    calculateNames(false);
+  }};
+  apply.addEventListener('click',applyGenre);
+  codeInput.addEventListener('keydown',event=>{{if(event.key==='Enter'){{event.preventDefault();applyGenre();}}}});
 }}
 function updateRawDeviation(card, selected){{
   const cellsPerBeat={{'16':4,'32':8,'8T':3,'16T':6}}[selected]||4;
@@ -986,7 +1083,8 @@ function applySubdivision(panel){{
 allPanels().forEach(panel=>{{
   const input=panel.querySelector('.start-number');
   input.addEventListener('input',()=>{{delete input.dataset.auto;calculateNames(false)}});
-  panel.querySelector('.genre-select').addEventListener('change',()=>calculateNames(false));
+  const genreInput=panel.querySelector('.genre-select');
+  genreInput.addEventListener('input',()=>{{setGenreCode(genreInput,genreInput.value);calculateNames(false)}});
   panel.querySelector('.export-check').addEventListener('change',()=>calculateNames(false));
   const subdivision=panel.querySelector('.subdivision-select');
   if(subdivision){{subdivision.addEventListener('change',()=>{{applySubdivision(panel);calculateNames(false)}});applySubdivision(panel);}}
@@ -994,9 +1092,8 @@ allPanels().forEach(panel=>{{
   if(compareMode)compareMode.addEventListener('change',()=>{{if(previewButton)void stopPreview();}});
   const play=panel.querySelector('.play-compare');
   if(play&&!play.disabled)play.addEventListener('click',e=>{{e.stopPropagation();void playComparison(panel)}});
-  const compare=panel.querySelector('.compare-midi');
-  if(compare&&!compare.disabled)compare.addEventListener('click',e=>{{e.stopPropagation();downloadComparison(panel)}});
 }});
+setupFallbackGenreDialog();
 calculateNames(false);
 document.getElementById('download-csv').addEventListener('click',()=>{{
   if(!calculateNames(true))return;
