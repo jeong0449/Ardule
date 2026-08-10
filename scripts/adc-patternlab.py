@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""adc-patternlab.py 260807a
+"""adc-patternlab.py 260810ba
 
 One MIDI -> self-contained interactive HTML/SVG whole-file drum matrix.
 Click the SVG to toggle RAW GM notes and two-bar SLOT_MAP display.
@@ -17,7 +17,7 @@ from adc_rhythm_analysis import (
     SUPPORTED_RESOLUTIONS, analyze_event_rhythm, detect_flams,
 )
 
-SCRIPT_NAME="adc-patternlab.py"; VERSION="260807a"; VERSION_TEXT=f"{SCRIPT_NAME} {VERSION}"
+SCRIPT_NAME="adc-patternlab.py"; VERSION="260810b"; VERSION_TEXT=f"{SCRIPT_NAME} {VERSION}"
 GHOST_CANDIDATE_MAX_VELOCITY=30
 if tuple(SUPPORTED_RESOLUTIONS) != ("16", "32", "8T", "16T"):
     raise RuntimeError(
@@ -29,7 +29,7 @@ GENRES=(
     ("RCK","Rock"),("BNV","Bossa Nova"),("FNK","Funk"),("JZZ","Jazz"),
     ("BLU","Blues"),("POP","Pop"),("BAL","Ballad"),("LAT","Latin / Cha-cha-cha"),
     ("AFC","Afro-Cuban"),("SMB","Samba"),("WLZ","Waltz"),("SWG","Swing"),
-    ("SHF","Shuffle"),("REG","Reggae"),("MTL","Metal"),("HHP","Hip-Hop"),("RAP","Rap"),
+    ("SHF","Shuffle"),("BOG","Boogie"),("REG","Reggae"),("MTL","Metal"),("HHP","Hip-Hop"),("RAP","Rap"),
     ("RNB","R&B (Rhythm & Blues)"),("EDM","EDM / Dance"),("HSE","House"),
     ("TNO","Techno"),("DRM","Drums (default / fallback)"),
 )
@@ -49,6 +49,7 @@ GENRE_MAP = [
     (re.compile(r'waltz|wlz', re.I), 'WLZ'),
     (re.compile(r'swing|swg', re.I), 'SWG'),
     (re.compile(r'shuffle|shf', re.I), 'SHF'),
+    (re.compile(r'boogie|bog', re.I), 'BOG'),
     (re.compile(r'reggae', re.I), 'REG'),
     (re.compile(r'metal', re.I), 'MTL'),
     (re.compile(r'hip\s*-?\s*hop|hiphop|hhp', re.I), 'HHP'),
