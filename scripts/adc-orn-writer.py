@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""adc-orn-writer.py 260807c
+"""adc-orn-writer.py 260810a
 
 Create ORN v1.0 sidecar files from a reviewed ADC PatternLab CSV and the
 original, unsplit MIDI file. Supports both FLAM grace events and ordinary
@@ -11,7 +11,7 @@ processed. START_BAR..END_BAR selects the pattern range in the original MIDI.
 Flam candidates are detected by adc_rhythm_analysis.py; adc_flam.py is not used.
 
 Default output:
-    PatternLab CSV + original MIDI -> ./ADP/NAME.ORN
+    PatternLab CSV + original MIDI -> ./NAME.ORN
 
 ORN timing uses the ADX canonical PPQN=240 coordinate system. ORN does not
 store PPQN because it inherits the tick base of the matching ADP/ADT pattern.
@@ -33,7 +33,7 @@ from mido import Message, MetaMessage, MidiFile
 from adc_rhythm_analysis import ADT_DRUM_FAMILIES, detect_flams
 
 SCRIPT_NAME = "adc-orn-writer.py"
-VERSION = "260807c"
+VERSION = "260810a"
 VERSION_TEXT = f"{SCRIPT_NAME} {VERSION}"
 ORN_VERSION_LINE = "; ORN v1.0"
 CANONICAL_PPQN = 240
@@ -388,8 +388,8 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument(
         "--out-dir",
         type=Path,
-        default=Path("ADP"),
-        help="ORN output directory (default: ./ADP)",
+        default=Path("."),
+        help="ORN output directory (default: current directory)",
     )
     parser.add_argument("--overwrite", action="store_true", help="Overwrite existing ORN files")
     parser.add_argument("--dry-run", action="store_true", help="Validate and print the plan without writing files")
