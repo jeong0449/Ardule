@@ -547,7 +547,10 @@ def validate_specs(
                 f"CSV row {spec.row_number}: TIME_SIG={spec.time_sig} does not match bars {spec.start_bar}-{spec.end_bar} ({actual_text})"
             )
         expected_source = f"{input_midi.name}:{spec.start_bar}-{spec.end_bar}"
-        if spec.source != expected_source:
+        # SOURCE may contain an optional human-readable comment after ';'.
+        # Only the machine-readable portion before the first ';' is validated.
+        source_core = spec.source.split(";", 1)[0].strip()
+        if source_core != expected_source:
             fail(
                 f"CSV row {spec.row_number}: SOURCE={spec.source!r}; expected {expected_source!r}"
             )
