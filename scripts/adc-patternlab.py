@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""adc-patternlab.py 260811b"
+"""adc-patternlab.py 260811d"
 
 One MIDI -> self-contained interactive HTML/SVG whole-file drum matrix.
 Click the SVG to toggle RAW GM notes and two-bar SLOT_MAP display.
@@ -17,7 +17,7 @@ from adc_rhythm_analysis import (
     SUPPORTED_RESOLUTIONS, analyze_event_rhythm, detect_flams,
 )
 
-SCRIPT_NAME="adc-patternlab.py"; VERSION="260811b"; VERSION_TEXT=f"{SCRIPT_NAME} {VERSION}"
+SCRIPT_NAME="adc-patternlab.py"; VERSION="260811d"; VERSION_TEXT=f"{SCRIPT_NAME} {VERSION}"
 GHOST_CANDIDATE_MAX_VELOCITY=30
 if tuple(SUPPORTED_RESOLUTIONS) != ("16", "32", "8T", "16T"):
     raise RuntimeError(
@@ -879,7 +879,8 @@ function allPanels(){{return [...document.querySelectorAll('.pattern-controls')]
 function numberablePanels(){{
   return allPanels().filter(panel=>{{
     const input=panel.querySelector('.start-number');
-    return input && !input.disabled;
+    const exp=panel.querySelector('.export-check');
+    return input && !input.disabled && exp && exp.checked;
   }});
 }}
 function cardTitle(panel){{
@@ -1042,10 +1043,14 @@ function setupFallbackGenreDialog(){{
   if(!backdrop||!codeInput||!apply)return;
   backdrop.hidden=false;
   codeInput.focus();
-  codeInput.addEventListener('input',()=>{{codeInput.value=codeInput.value.toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,3);codeInput.classList.remove('invalid');}});
+  // Do not sanitize on every keystroke: doing so interferes with IME
+  // composition (notably Korean input) and can make the field appear unusable.
+  // Validation and normalization are performed only when the user applies it.
+  codeInput.addEventListener('input',()=>{{codeInput.classList.remove('invalid');}});
   const applyGenre=()=>{{
     const code=codeInput.value.trim().toUpperCase();
     if(!/^[A-Z0-9]{{3}}$/.test(code)){{codeInput.classList.add('invalid');return;}}
+    codeInput.value=code;
     allPanels().forEach(panel=>{{
       const genreInput=panel.querySelector('.genre-select');
       if(genreInput&&!genreInput.disabled)setGenreCode(genreInput,code);
@@ -1120,7 +1125,8 @@ document.getElementById('download-csv').addEventListener('click',()=>{{
     const subdivision=panel.querySelector('.subdivision-select');
     const orn=panel.querySelector('.orn-check');
     const sourceRef={json.dumps(path.name)}+':'+panel.dataset.startBar+'-'+panel.dataset.endBar;
-    rows.push([{json.dumps(path.name)},panel.dataset.startBar,panel.dataset.endBar,panel.dataset.patternName||'',panel.dataset.timeSig,panel.dataset.slotMap,exp.checked?'YES':'NO',genre.value,subdivision.value,orn.checked?'YES':'NO',panel.dataset.duplicateOf,sourceRef]);
+    const exportName=exp.checked?(panel.dataset.patternName||''):'';
+    rows.push([{json.dumps(path.name)},panel.dataset.startBar,panel.dataset.endBar,exportName,panel.dataset.timeSig,panel.dataset.slotMap,exp.checked?'YES':'NO',genre.value,subdivision.value,orn.checked?'YES':'NO',panel.dataset.duplicateOf,sourceRef]);
   }});
   const csv='\\uFEFF'+rows.map(r=>r.map(csvCell).join(',')).join('\\r\\n');
   const blob=new Blob([csv],{{type:'text/csv;charset=utf-8'}});
