@@ -15,14 +15,14 @@
 
 ## Try Ardule
 
-**Curious?**  
-Download the self-contained **Ardule Drum Player HTML file** and open it in your web browser. No installation is required. The player includes 44 embedded drum patterns and six drum kits, so you can start exploring immediately.
+**Curious?**
+Download the self-contained **[Ardule Drum Player HTML file](./ardule-drum-player.html)** and open it in your web browser. No installation is required. The player includes 44 embedded drum patterns and six drum kits, so you can start exploring immediately.
 
-**Want more patterns?**  
-Explore the **Pattern Collection** and load additional ADT/ORN patterns into the player.
+**Want more patterns?**
+Explore the **[Pattern Collection](./collections/)** and load additional ADT/ORN patterns into the player.
 
-**Want to study drum patterns yourself?**  
-Explore the **scripts** and use the analysis, visualization, and conversion tools to examine Standard MIDI drum performances and create your own ADT/ADP/ORN patterns.
+**Want to study drum patterns yourself?**
+Explore the **[scripts](./scripts/)** and use the analysis, visualization, and conversion tools to examine Standard MIDI drum performances and create your own ADT/ADP/ORN patterns.
 
 ---
 
