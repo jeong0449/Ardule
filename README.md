@@ -28,7 +28,14 @@ Its core workflow is summarized as:
 **Analyze • Abstract • Exchange • Play**
 
 
+<p align="center">
+  <img src="images/ardule-drum-player-v0.2.9-screenshot.png"
+       alt="Ardule Drum Player"
+       width="600">
+</p>
+
 ---
+
 
 ## Project Reorganization (v2.3)
 
