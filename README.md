@@ -7,6 +7,22 @@
 
 > **Note:** The term **ADX Drum** is still used in various parts of this documentation. To establish a more distinctive identity, it will gradually be replaced by **Ardule Drum Patternology**.
 
+<p align="center">
+  <img src="images/ardule-drum-player-v0.2.9-screenshot.png"
+       alt="Ardule Drum Player"
+       width="600">
+</p>
+
+## Try Ardule
+
+**Curious?**  
+Download the self-contained **Ardule Drum Player HTML file** and open it in your web browser. No installation is required. The player includes 44 embedded drum patterns and six drum kits, so you can start exploring immediately.
+
+**Want more patterns?**  
+Explore the **Pattern Collection** and load additional ADT/ORN patterns into the player.
+
+**Want to study drum patterns yourself?**  
+Explore the **scripts** and use the analysis, visualization, and conversion tools to examine Standard MIDI drum performances and create your own ADT/ADP/ORN patterns.
 
 ---
 
@@ -26,13 +42,6 @@ What began as a lightweight way to represent and play drum patterns gradually ex
 Its core workflow is summarized as:
 
 **Analyze • Abstract • Exchange • Play**
-
-
-<p align="center">
-  <img src="images/ardule-drum-player-v0.2.9-screenshot.png"
-       alt="Ardule Drum Player"
-       width="600">
-</p>
 
 ---
 
