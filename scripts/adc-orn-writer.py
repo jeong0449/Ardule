@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""adc-orn-writer.py 260810a
+"""adc-orn-writer.py 260812a
 
 Create ORN v1.0 sidecar files from a reviewed ADC PatternLab CSV and the
 original, unsplit MIDI file. Supports both FLAM grace events and ordinary
@@ -33,7 +33,7 @@ from mido import Message, MetaMessage, MidiFile
 from adc_rhythm_analysis import ADT_DRUM_FAMILIES, detect_flams
 
 SCRIPT_NAME = "adc-orn-writer.py"
-VERSION = "260810a"
+VERSION = "260812a"
 VERSION_TEXT = f"{SCRIPT_NAME} {VERSION}"
 ORN_VERSION_LINE = "; ORN v1.0"
 CANONICAL_PPQN = 240
@@ -259,9 +259,10 @@ def build_orn_events(
       * FLAM: removable grace notes identified by detect_flams()
       * NOTE: ordinary note-ons that do not lie exactly on the selected ADT grid
 
-    ADX never quantizes the time axis.  ADT/ADP contains only exact on-grid
-    note-ons; ORN restores the off-grid performance events at their original
-    timing by storing a signed tick offset from a reference grid step.
+    ADX never quantizes the time axis. ADT/ADP contains only exact on-grid
+    note-ons. Ordinary off-grid membership is decided in the source MIDI PPQN
+    before canonical conversion; ORN then stores the event in the ADX PPQN=240
+    coordinate system as a signed tick offset from a reference grid step.
     """
     start_tick = bars[row.start_bar - 1].start_tick
     end_tick = bars[row.end_bar - 1].end_tick
@@ -279,6 +280,7 @@ def build_orn_events(
 
     length = pattern_length_steps(row, bars)
     steps_per_quarter = STEPS_PER_QUARTER[row.subdiv]
+    source_step_ticks = source_ppqn / steps_per_quarter
     step_ticks = CANONICAL_PPQN / steps_per_quarter
     loop_ticks = int(round(length * step_ticks))
     orn_events: List[OrnEvent] = []
@@ -322,13 +324,16 @@ def build_orn_events(
             # Already represented above as FLAM; avoid a duplicate NOTE event.
             continue
 
-        tick = canonical_tick(source_tick, source_ppqn)
-        step_pos = tick / step_ticks
-        nearest_step = int(round(step_pos))
+        # Decide grid membership in the original MIDI coordinate system.
+        source_step_pos = source_tick / source_step_ticks
+        nearest_step = int(round(source_step_pos))
 
         # Exact on-grid hits belong in ADT/ADP, not ORN.
-        if math.isclose(step_pos, nearest_step, abs_tol=1e-9):
+        if math.isclose(source_step_pos, nearest_step, abs_tol=1e-9):
             continue
+
+        # The event is already known to be off-grid. Convert only for storage.
+        tick = canonical_tick(source_tick, source_ppqn)
 
         loop_wrap = False
         if nearest_step >= length:
