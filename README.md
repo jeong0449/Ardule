@@ -86,7 +86,7 @@ This separation clearly distinguishes the embedded playback platform from the so
 
 The ADX Platform consists of four major components:
 
-- [**ADC Toolkit**](./scripts/README_KO.md) – Tools for MIDI analysis, preprocessing, pattern abstraction, and format conversion (ADT/ADP v2.3, not v2.2).
+- [**ADC Toolkit**](./scripts/README_KO.md) – Tools for MIDI analysis, preprocessing, pattern abstraction, and format conversion (ADT/ADP v2.3, not v2.2; v2.2 was used by earlier generations of Nano Ardule)).
 - **ADT / ADP / ORN** – Open drum pattern specifications for human-readable editing, compact binary playback, and ornament representation.
 - **ADX Drum Player** – A lightweight player for validating and performing ADT/ADP/ORN patterns.
 - **Pattern Library** – A collection of reusable and exchangeable drum patterns derived from Standard MIDI files.
