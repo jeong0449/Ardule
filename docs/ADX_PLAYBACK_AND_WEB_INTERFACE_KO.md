@@ -1,6 +1,6 @@
 # ADX의 재생 도구와 웹 인터페이스
 
-> **국문(Korean) 문서 - 2026-08-12 개정**
+> **국문(Korean) 문서 --- 2026-08-13 개정**
 
 ## 개요
 
@@ -9,18 +9,21 @@ ADX 플랫폼은 단순한 재생기가 아니라 **분석(Analyze) → 추상�
 목표로 한다.
 
 초기에는 PatternLab과 운영체제별 플레이어가 중심이었으나,
-**self-contained Web GUI Pattern Player인 Ardule Drum Player**가
-개발되면서 재생 계층의 성격이 크게 달라졌다. 이제 웹 브라우저는 단순한
-PatternLab 리포트 뷰어나 로컬 서비스의 프런트엔드가 아니라, ADT/ORN
-패턴을 직접 열고 보고 듣는 **독립적인 실사용 환경**이 될 수 있다.
+**self-contained Web GUI Pattern Player인 Ardule Drum Studio**가
+개발되면서 재생 계층의 성격이 크게 달라졌다. 이후 패턴 편집 기능과 ARR
+기반 arrangement 재생 기능이 추가되면서 웹 인터페이스는 **Ardule Drum
+Studio**로 발전하였다.
+
+2026-08-13 현재 **Ardule Drum Studio v0.4.1**에서 Player, Edit,
+Arrangement의 세 작업 영역을 통합하여 시험하고 있다.
 
 현재 도구의 역할은 다음과 같이 구분할 수 있다.
 
 -   **PatternLab** : MIDI 분석 및 ADX 패턴 생성
 -   **ADX Player (Linux)** : Linux/Raspberry Pi용 경량 패턴 재생기
 -   **ADX Player for Windows** : ADX/MIDI 재생 및 콘솔 뷰어
--   **Ardule Drum Player (Web GUI)** : 브라우저에서 ADT/ORN을 직접
-    로드·시각화·재생하는 실사용 플레이어
+-   **Ardule Drum Studio (Web GUI)** : 브라우저에서 ADT/ORN을 직접
+    로드·시각화·재생·편집하고 ARR을 검증·재생하는 self-contained 환경
 
 ------------------------------------------------------------------------
 
@@ -92,61 +95,38 @@ Linux/Windows 네이티브 플레이어는 FluidSynth와 SoundFont를 이용할 
 
 ------------------------------------------------------------------------
 
-# Ardule Drum Player: self-contained Web GUI의 등장
+# Ardule Drum Studio에서 Ardule Drum Studio로
 
-웹 인터페이스에 대한 초기 구상은 다음과 같은 구조였다.
-
-``` text
-Browser
-   │
-   ▼
-Local ADX Service
-   │
-   ├─ ADT
-   ├─ ADP
-   ├─ ORN
-   ├─ MIDI
-   └─ FluidSynth
-```
-
-그러나 실제 개발 결과는 이보다 단순하고 독립적인 방향으로 발전하였다.
-
-**Ardule Drum Player는 별도의 Python 서버나 FluidSynth 실행 환경 없이 웹
-브라우저에서 직접 동작하는 self-contained GUI pattern player이다.**
+웹 인터페이스는 별도의 Python 서버나 FluidSynth 실행 환경 없이
+브라우저에서 직접 동작하는 **self-contained HTML/JavaScript/Web Audio
+환경**으로 발전하였다. 처음에는 ADT/ORN을 보고 듣는 Ardule Drum
+Studio였지만, 패턴 편집과 ARR 재생 기능이 추가되면서 v0.4.x부터 **Ardule
+Drum Studio**라는 이름을 사용한다.
 
 ``` text
-ADT + ORN
-   │
-   ▼
-Ardule Drum Player
-(HTML / JavaScript / Web Audio)
-   │
-   ├─ Pattern visualization
-   ├─ Accent display
-   ├─ ORN display
-   ├─ Drum-kit selection
-   ├─ Mute / Solo
-   └─ Playback
+                 Ardule Drum Studio
+              (single self-contained HTML)
+                         │
+          ┌──────────────┼──────────────┐
+          ▼              ▼              ▼
+       Player           Edit       Arrangement
+      View/Play      Edit/Save     Validate/Play
+       ADT/ORN          ADT             ARR
 ```
 
-이 변화는 중요하다. Python 기반 도구가 **분석과 데이터 생성**을
-담당한다면, Ardule Drum Player는 생성된 ADX 패턴을 실제로 사용하는
-**배포 가능한 실사용 도구**가 된다.
+Python 기반 도구가 **분석과 데이터 생성**을 담당한다면, Studio는 생성된
+패턴을 실제로 **보고, 듣고, 수정하고, arrangement로 조립하여 확인하는
+실사용 환경**이 된다.
 
 ------------------------------------------------------------------------
 
 ## Self-contained 오디오의 구현
 
-Ardule Drum Player가 self-contained로 동작할 수 있는 핵심은 **재생에
+Ardule Drum Studio가 self-contained로 동작할 수 있는 핵심은 **재생에
 필요한 드럼 샘플을 HTML 안에 포함**했다는 점이다.
 
-전체 SoundFont를 브라우저에 넣는 대신, 실제 ADX slot map에서 사용하는
-드럼 음만 선별하고 여러 drum kit에서 필요한 샘플을 추출하였다. 이 오디오
-데이터는 HTML/JavaScript가 직접 사용할 수 있는 형태로 내장되어 있으며,
-페이지를 열면 기본 **Standard kit**가 준비되고 다른 kit를 선택하면 해당
-샘플 세트를 사용할 수 있다.
-
-개념적으로는 다음과 같다.
+전체 SoundFont를 브라우저에 넣는 대신 실제 ADX slot map에서 사용하는
+음과 여러 drum kit에 필요한 샘플을 선별하여 내장한다.
 
 ``` text
 Selected drum samples
@@ -161,42 +141,73 @@ single HTML file
 Web Audio playback
 ```
 
-따라서 일반적인 사용에서는 외부 SoundFont 파일, FluidSynth, Python 서버
-또는 별도의 오디오 파일 경로가 필요하지 않는다. **HTML 파일 하나가 UI,
-ADT/ORN parser, pattern visualization, playback logic, 그리고 필요한
-drum sample data를 함께 포함**한다.
-
-다만 이러한 방식은 파일 크기를 증가시킨다. 따라서 모든 GM drum note와
-모든 drum kit를 포함하기보다, **ADX에서 실제 사용하는 slot의 음과
-활용성이 높은 kit만 선택적으로 내장**하는 것이 self-contained 배포와
-파일 크기 사이의 현실적인 절충이다.
-
-# Ardule Drum Player의 현재 기능
-
-현재 Web GUI player는 다음과 같은 기능을 제공한다.
-
--   ADT 파일 로드
--   ADT/ORN drag & drop
--   패턴 grid 시각화
--   ADT의 SOURCE 정보 표시
--   ORN 로드 시 ornament 이벤트 시각화
--   accent level 표시 및 6-level 기본 표현
--   Play/Stop 단일 버튼
--   Space 키를 이용한 Play/Stop 전환
--   여러 drum kit 선택
--   slot별 Mute / Solo
--   전체 Mute/Solo 상태 해제
--   브라우저 내부 오디오 재생
-
-ORN은 항상 강제로 표시하지 않고, **ORN이 실제로 로드된 경우에만** 패턴
-위에 나타난다. 기본 on-grid note는 원래 accent 색상의 원으로 유지하고,
-time-shift는 해당 위치의 작은 삼각형으로 표현하여 원래 패턴과 ornament를
-동시에 읽을 수 있도록 한다.
-
-이 인터페이스의 중요한 특징은 패턴을 단순히 '듣는' 것이 아니라 **보면서
-듣는 것**이다.
+따라서 일반적인 사용에서는 외부 SoundFont, FluidSynth, Python 서버 또는
+별도의 오디오 파일 경로가 필요하지 않는다. HTML 하나가 UI, ADT/ORN
+parser, pattern visualization, playback logic, editor logic, ARR
+parser/validator, 그리고 drum sample data를 함께 포함한다.
 
 ------------------------------------------------------------------------
+
+# Ardule Drum Studio v0.4.1의 현재 기능
+
+상단에는 폴더의 돌출 탭처럼 보이는 **Player / Edit / Arrangement** 세
+모드가 있으며, 각 모드는 배경색을 미묘하게 달리하여 현재 작업 상태를
+구분한다.
+
+## Player
+
+-   ADT 파일 및 ADT/ORN drag & drop
+-   pattern grid와 SOURCE 표시
+-   ORN ornament 시각화
+-   6-level accent 기본 표현
+-   여러 drum kit 선택
+-   slot별 Mute / Solo
+-   브라우저 내부 오디오 재생
+
+## Edit
+
+Player에 로드된 ADT를 출발점으로 편집한다. 빈 캔버스에서 새 패턴을
+만드는 것이 기본 동작은 아니다.
+
+-   grid cell 클릭으로 note 입력/삭제
+-   동일 step의 accent를 column 단위로 지정
+-   multiple undo
+-   원본(A)과 편집본(B)의 즉시 비교 재생
+-   A/B 선택에 따라 화면 패턴도 함께 전환
+-   pattern name과 SOURCE 편집
+-   수정된 ADT 저장
+
+여기서 A/B는 2-bar 패턴의 앞/뒤 bar가 아니라 **A = Original, B =
+Edited**를 뜻한다.
+
+## Arrangement
+
+ARR은 사람이 읽고 수정할 수 있는 텍스트 포맷으로 유지하고, Studio는 이를
+**로드·검증·재생**하는 역할을 담당한다.
+
+-   ARR drag & drop / 파일 로드
+-   ARR 문법 검사
+-   Pattern Bank 디렉터리 로드 및 clear
+-   ADT dependency 자동 추출 및 누락 pattern 검출
+-   A/B bar 및 beat range 유효성 검사
+-   section과 singleton pattern이 혼합된 chain 전개
+-   REST와 COUNT-IN 처리
+-   Drum Kit 선택 및 BPM override
+-   Play/Pause 겸용 버튼과 Stop
+-   bar + beat 현재 위치 표시
+-   bar 단위 seek slider
+-   ARR comment 별도 표시
+-   Previous / Now / Next 3-pattern preview
+-   pattern 전환 시 짧은 scroll-like transition
+-   preview card double-click으로 해당 원본 ADT를 Player 탭에 로드
+
+COUNT-IN은 **Closed Hi-Hat으로 고정**하며 1 bar 또는 1/2 bar를 허용한다.
+Seek slider는 bar index를 기준으로 하며, Stop은 항상 arrangement의
+처음으로 돌아간다.
+
+Pattern Bank는 사용자가 선택한 ADT 파일 디렉터리에서 구성된다.
+브라우저가 선택 시점에 폴더의 파일을 Studio에 전달하며, Studio가
+운영체제의 파일시스템을 지속적으로 탐색하는 방식은 아니다.
 
 # ADP의 위치
 
@@ -218,7 +229,7 @@ ORN  → optional timing & ornament sidecar
 
 # 반복 재생과 연주 제어
 
-Ardule Drum Player에서는 하나의 패턴을 반복해서 들으며 구조와 accent를
+Ardule Drum Studio에서는 하나의 패턴을 반복해서 들으며 구조와 accent를
 확인할 수 있다.
 
 재생 인터페이스는 가능한 한 단순하게 유지한다.
@@ -234,46 +245,24 @@ Ardule Drum Player에서는 하나의 패턴을 반복해서 들으며 구조와
 
 ------------------------------------------------------------------------
 
-# 다음 단계: 패턴 편집기
+# 패턴 편집 기능의 구현
 
-현재 플레이어의 grid는 이미 ADT의 구조를 브라우저 안에서 표현한다.
-따라서 다음 단계는 grid를 **읽기 전용 표시 영역에서 편집 가능한 pattern
-editor로 확장**하는 것이다.
+초기 문서에서 다음 단계로 제안했던 pattern editor는 현재 **Ardule Drum
+Studio v0.4.1의 Edit 탭**으로 구현되어 있다.
 
-예상 기능은 다음과 같다.
+Player에 로드된 패턴을 출발점으로 note 입력/삭제, accent 수정, multiple
+undo, 원본/편집본 비교 재생, pattern name과 SOURCE 편집, ADT 저장을
+수행할 수 있다.
 
--   note 입력/삭제
--   accent 수정
--   subdivision 선택 또는 변경
--   slot별 편집
--   ORN 편집
--   수정 결과를 ADT/ORN으로 저장
+따라서 브라우저는 더 이상 Pattern Player에 머물지 않고 **Pattern
+Player + Pattern Editor + Arrangement Player**의 역할을 함께 수행한다.
 
-이 단계가 구현되면 브라우저는 단순 player가 아니라 **Pattern Player +
-Pattern Editor**가 된다.
+# ARR과 Arrangement
 
-------------------------------------------------------------------------
+개별 패턴을 곡 구조로 연결하기 위해 별도의 **ARR (Arrangement)** 텍스트
+포맷을 설계하고 있으며, 첫 공개 포맷 버전은 **ARR v0.1**로 예정한다.
 
-# 다음 단계: ARR과 Chain Editor
-
-개별 패턴의 재생과 편집 다음 단계는 여러 ADT 패턴을 연결하는 것이다.
-
-``` text
-Intro
-  ↓
-Main A
-  ↓
-Main B
-  ↓
-Fill
-  ↓
-Main A
-```
-
-이를 위해 별도의 **ARR (Arrangement)** 포맷을 정의한다.
-
-ARR은 ADT 자체를 복제하기보다 패턴을 참조하고, 필요하면 다음과 같이
-일부만 선택할 수 있다.
+ARR은 ADT 자체를 복제하지 않고 패턴을 참조한다.
 
 ``` text
 RCK_0042
@@ -282,29 +271,24 @@ RCK_0042@B
 RCK_0042@A:1-2
 ```
 
-반복, REST, count-in, Intro/Verse/Chorus/Outro 등의 song structure도
-ARR에서 표현할 수 있다.
+전체 pattern, partial pattern, reusable section, singleton pattern,
+repeat, REST를 조합할 수 있다. 복잡한 구조에서는 section을 먼저 정의한
+뒤 `[CHAIN]` 에서 반복하여 사용할 수 있으며, section 사이에 singleton
+pattern이나 REST를 자유롭게 삽입할 수 있다.
 
-향후 Chain Editor에서는 사용자가 패턴을 불러온 뒤 Drag & Drop으로 순서를
-배열하고, A/B 또는 beat 범위를 선택하여 하나의 arrangement를 만들 수
-있다.
+REST는 bar 또는 beat 단위를 허용한다. COUNT-IN은 Closed Hi-Hat으로
+고정하고 1 bar 또는 1/2 bar만 허용한다.
 
-따라서 브라우저 UI는 자연스럽게 다음과 같은 구조로 발전할 수 있다.
+현재 설계에서는 arrangement 전체의 `TIME_SIG`를 헤더에 중복 기록할
+필요가 크지 않다고 본다. 각 ADT가 이미 자신의 박자 정보를 갖고 있으므로
+pattern, A/B bar, beat range는 해당 ADT의 정보를 이용해 해석할 수 있다.
+독립적인 bar 단위 REST나 COUNT-IN처럼 기준 박자가 필요한 요소는 인접한
+실제 pattern의 박자를 이용하는 방향으로 구현·검증한다.
 
-``` text
-┌─────────────────────────────────────┐
-│ Ardule Drum Player                  │
-├──────────┬──────────┬───────────────┤
-│ Player   │ Pattern  │ Chain / ARR   │
-│          │ Editor   │ Editor        │
-└──────────┴──────────┴───────────────┘
-```
-
-세 기능은 서로 다른 프로그램일 필요가 없다. 동일한 ADT/ORN parser와 Web
-Audio 재생 엔진, pattern grid를 공유하면서 탭 또는 작업 모드만 달리할 수
-있다.
-
-------------------------------------------------------------------------
+초기에는 Drag & Drop 기반 Chain Editor도 생각했지만, 현재는 **별도의
+복잡한 그래픽 Chain Editor를 우선 개발하지 않는다.** ARR 자체를 사람이
+읽고 편집하기 쉬운 텍스트로 유지하고, Studio가 validation, playback,
+visual preview를 담당하는 방식이 더 단순하다.
 
 # 웹 인터페이스의 의미
 
@@ -322,7 +306,7 @@ self-contained Web GUI가 실제로 동작하게 되면서 웹 인터페이스�
 -   별도 애플리케이션 설치 부담이 작음
 -   ADT/ORN 파일을 즉시 열어 확인 가능
 -   동일 UI를 Windows, Linux 및 다른 브라우저 환경으로 확장 가능
--   향후 Pattern Editor와 Chain Editor를 동일 코드 기반에서 구현 가능
+-   Player/Edit/Arrangement를 동일 코드 기반에서 통합 가능
 
 따라서 Python과 Web GUI의 역할은 경쟁 관계가 아니라 명확한 분업 관계가
 된다.
@@ -360,7 +344,7 @@ Standard MIDI
   ADT + ORN
      │
      ▼
-Ardule Drum Player
+Ardule Drum Studio
      │
      ├─ View
      ├─ Play
@@ -380,17 +364,24 @@ PatternLab은 **분석 도구**이다.
 
 Linux/Windows 플레이어는 **플랫폼별 재생 및 검증 도구**이다.
 
-그리고 새로 개발된 **Ardule Drum Player는 ADX 패턴을 설치 부담 없이 직접
-사용하는 self-contained Web GUI**이다.
+그리고 self-contained Web GUI로 출발한 Ardule Drum Studio는 이제
+**Player, Edit, Arrangement**의 세 작업 영역을 하나의 HTML 안에 통합하고
+있다.
 
-이제 웹 인터페이스는 더 이상 '가능성'만을 논하는 단계가 아니다. 이미
-**패턴 시각화 + 재생 + ORN 표현 + drum kit 선택 + Mute/Solo**가 가능한
-실사용 플레이어가 만들어졌다.
+2026-08-13 현재 **Ardule Drum Studio v0.4.1**에서는 패턴 시각화와 재생뿐
+아니라 ADT 편집·저장, ARR 로드·검증, Pattern Bank 참조 확인, arrangement
+재생, bar seek, Previous/Now/Next preview, Player 탭과의 연계까지 시험할
+수 있다.
 
-다음 단계는 이 기반 위에 **Pattern Editor**와 **ARR 기반 Chain
-Editor**를 올리는 것이다.
+따라서 웹 인터페이스는 더 이상 향후 가능성만을 설명하는 단계가 아니다.
+Pattern Editor와 ARR playback의 핵심 기능이 이미 실제 구현 단계에
+들어왔다.
 
-이 구조가 완성되면 ADX는 단순한 파일 포맷이나 분석 toolkit이 아니라,
+ARR 자체는 복잡한 그래픽 Chain Editor를 전제로 하지 않는다. 사람이 읽고
+수정할 수 있는 단순한 텍스트 포맷을 유지하고, Studio가
+**검증·재생·시각적 확인**을 담당하는 방향이 현재로서는 가장 간결하다.
+
+이 구조가 정착되면 ADX는 단순한 파일 포맷이나 분석 toolkit이 아니라,
 
 > **분석하고, 추상화하고, 교환하고, 재생하며, 편집하고, 조립하는 통합
 > 드럼 패턴 플랫폼**
