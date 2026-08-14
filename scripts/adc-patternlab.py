@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""adc-patternlab.py 260812g"
+"""adc-patternlab.py 260814a"
 
 One MIDI -> self-contained interactive HTML/SVG whole-file drum matrix.
 Click the SVG to toggle RAW GM notes and two-bar SLOT_MAP display.
@@ -17,7 +17,7 @@ from adc_rhythm_analysis import (
     SUPPORTED_RESOLUTIONS, analyze_event_rhythm, detect_flams,
 )
 
-SCRIPT_NAME="adc-patternlab.py"; VERSION="260812g"; VERSION_TEXT=f"{SCRIPT_NAME} {VERSION}"
+SCRIPT_NAME="adc-patternlab.py"; VERSION="260814a"; VERSION_TEXT=f"{SCRIPT_NAME} {VERSION}"
 VERY_WEAK_HIT_MAX_VELOCITY=30
 if tuple(SUPPORTED_RESOLUTIONS) != ("16", "32", "8T", "16T"):
     raise RuntimeError(
@@ -180,7 +180,7 @@ class Ev: tick:int; note:int; vel:int; dur:int=0
 @dataclass
 class Bar: no:int; start:int; end:int; num:int; den:int
 @dataclass
-class Block: no:int; bars:List[Bar]; start:int; end:int; events:List[Ev]; smap:SMap; unknown:List[int]; subdiv:dict; pattern_no:int=0; duplicate_of:Optional[int]=None; ending_hit:bool=False
+class Block: no:int; bars:List[Bar]; start:int; end:int; events:List[Ev]; smap:SMap; unknown:List[int]; subdiv:dict; pattern_no:int=0; duplicate_of:Optional[int]=None; duplicate_csv:str=""; duplicate_card:str=""; ending_hit:bool=False
 
 
 
@@ -297,13 +297,72 @@ def _is_ending_hit_block(block_bars, events):
     near_start=(first_tick-block_bars[0].start)<=tol
     return near_start and len(onset_group)==len(events)
 
-def _pattern_signature(block):
-    """Return a timing-only identity signature for one pattern block.
-
-    Pattern identity depends only on each raw MIDI note's relative onset tick
-    and note number. Velocity and note duration are deliberately ignored.
-    """
+def _raw_pattern_signature(block):
+    """Return the original-GM-note onset signature for diagnostics only."""
     return tuple(sorted((e.tick-block.start,e.note) for e in block.events))
+
+
+def _pattern_signature(block):
+    """Return the post-SLOT_MAP abstraction signature for duplicate detection.
+
+    Identity is based on SLOT_MAP ID, relative onset tick, and abstract slot.
+    Velocity and duration are ignored. Notes outside the selected SLOT_MAP keep
+    their raw note number so that uncovered material is never merged blindly.
+    Multiple raw notes collapsing onto the same slot at the same tick count as
+    one abstract hit, matching the SLOT/ADT representation.
+    """
+    hits=set()
+    for event in block.events:
+        index=slot_index(block.smap,event.note)
+        abstract_key=("slot",index) if index is not None else ("raw",event.note)
+        hits.add((event.tick-block.start,abstract_key))
+    return (block.smap.id,tuple(sorted(hits)))
+
+
+def _duplicate_descriptions(reference, duplicate):
+    """Return (card text, CSV text) describing raw differences after abstraction."""
+    if _raw_pattern_signature(reference)==_raw_pattern_signature(duplicate):
+        return "RAW and abstract pattern identical", f"B{reference.no:03d}; RAW identical"
+
+    def grouped(block):
+        out={}
+        for event in block.events:
+            rel=event.tick-block.start
+            index=slot_index(block.smap,event.note)
+            key=(rel,index if index is not None else -1)
+            out.setdefault(key,[]).append(event.note)
+        return {key:sorted(values) for key,values in out.items()}
+
+    left=grouped(reference); right=grouped(duplicate); changes=[]
+    for key in sorted(set(left)|set(right)):
+        old_notes=left.get(key,[]); new_notes=right.get(key,[])
+        if old_notes==new_notes:
+            continue
+        slot_no=key[1]
+        slot_label=(duplicate.smap.slots[slot_no].label if 0<=slot_no<len(duplicate.smap.slots) else "UNMAPPED")
+        for old_note,new_note in zip(old_notes,new_notes):
+            if old_note!=new_note:
+                changes.append((old_note,new_note,slot_label))
+        if len(old_notes)>len(new_notes):
+            changes.extend((note,None,slot_label) for note in old_notes[len(new_notes):])
+        elif len(new_notes)>len(old_notes):
+            changes.extend((None,note,slot_label) for note in new_notes[len(old_notes):])
+
+    if not changes:
+        return "RAW notes differ after SLOT_MAP abstraction", f"B{reference.no:03d}; abstract duplicate; RAW notes differ"
+
+    card_parts=[]; csv_parts=[]
+    for old_note,new_note,label in changes:
+        if old_note is None:
+            card_parts.append(f"added {GM.get(new_note,'non-GM')} ({new_note})")
+            csv_parts.append(f"+{new_note} ({label})")
+        elif new_note is None:
+            card_parts.append(f"removed {GM.get(old_note,'non-GM')} ({old_note})")
+            csv_parts.append(f"-{old_note} ({label})")
+        else:
+            card_parts.append(f"{GM.get(old_note,'non-GM')} ({old_note}) → {GM.get(new_note,'non-GM')} ({new_note})")
+            csv_parts.append(f"{old_note}→{new_note} ({label})")
+    return "RAW difference: "+", ".join(card_parts), f"B{reference.no:03d}; abstract duplicate; RAW note"+("s " if len(csv_parts)!=1 else " ")+", ".join(csv_parts)
 
 def skip_leading_empty_bars(bars, events):
     """Drop only leading bars without CH10 note-on events; preserve Bar.no."""
@@ -332,7 +391,10 @@ def blocks(bars,ev,tpq,filename):
             continue
         sig=_pattern_signature(b)
         if sig in seen:
-            first=seen[sig]; b.pattern_no=first.pattern_no; b.duplicate_of=first.no
+            first=seen[sig]
+            b.pattern_no=first.pattern_no
+            b.duplicate_of=first.no
+            b.duplicate_card,b.duplicate_csv=_duplicate_descriptions(first,b)
         else:
             b.pattern_no=next_pattern; seen[sig]=b; next_pattern+=1
     return out
@@ -395,7 +457,8 @@ def grid_omitted_event_ids(block, subdiv: str) -> Set[int]:
 def reference_card(b,x,y,w=430,h=470,path=None):
     bars=str(b.bars[0].no) if len(b.bars)==1 else f'{b.bars[0].no}–{b.bars[-1].no}'
     p=[f'<g class="block duplicate {"bad" if b.unknown else ""}" data-block="{b.no}"><rect x="{x}" y="{y}" width="{w}" height="{h}" rx="8" class="bg"/>']
-    p += [tx(x+16,y+28,f'B{b.no:03d}  bars {bars}',"title"),tx(x+w/2,y+105,f'Pattern #{b.pattern_no:03d}',"dup-pattern","middle"),tx(x+w/2,y+139,f'Same as B{b.duplicate_of:03d}',"dup-same","middle"),tx(x+w/2,y+169,f'ID {b.smap.id} {b.smap.name} · matrix omitted',"meta","middle"),tx(x+w/2,y+192,('MISSING NOTES: '+','.join(map(str,b.unknown))) if b.unknown else '',"warning","middle"),tx(x+16,y+248,'duplicate checked within this MIDI file only',"meta"),card_controls(path,b,x,y+264,w),'</g>']
+    heading=(f'Same as B{b.duplicate_of:03d}' if b.duplicate_csv.endswith('RAW identical') else f'Abstract duplicate of B{b.duplicate_of:03d}')
+    p += [tx(x+16,y+28,f'B{b.no:03d}  bars {bars}',"title"),tx(x+w/2,y+105,f'Pattern #{b.pattern_no:03d}',"dup-pattern","middle"),tx(x+w/2,y+139,heading,"dup-same","middle"),tx(x+w/2,y+164,b.duplicate_card,"meta","middle"),tx(x+w/2,y+188,f'ID {b.smap.id} {b.smap.name} · matrix omitted',"meta","middle"),tx(x+w/2,y+211,('MISSING NOTES: '+','.join(map(str,b.unknown))) if b.unknown else '',"warning","middle"),tx(x+16,y+248,'duplicate checked within this MIDI file only',"meta"),card_controls(path,b,x,y+264,w),'</g>']
     return ''.join(p)
 
 def ending_card(b,x,y,w=430,h=470,path=None):
@@ -655,7 +718,7 @@ def card_controls(path, b, x, y, w=430, disabled=False):
     dis=' disabled' if disabled else ''
     checked_export=' checked' if export_checked else ''
     checked_orn=' checked' if orn_candidate and not disabled else ''
-    dup=b.duplicate_of or ""
+    dup=b.duplicate_csv if b.duplicate_of is not None else ""
     return f'''<foreignObject x="{x+10}" y="{y}" width="{w-20}" height="196" class="pattern-controls-wrap">
 <div xmlns="http://www.w3.org/1999/xhtml" class="pattern-controls" data-block="{b.no}" data-pattern-no="{b.pattern_no}" data-start-bar="{b.bars[0].no}" data-end-bar="{b.bars[-1].no}" data-time-sig="{html.escape("→".join(f"{bar.num}/{bar.den}" for bar in b.bars) if len({(bar.num,bar.den) for bar in b.bars}) > 1 else f"{b.bars[0].num}/{b.bars[0].den}")}" data-slot-map="{html.escape(b.smap.name)}" data-duplicate-of="{dup}">
 <div class="catalog-row">
@@ -730,7 +793,7 @@ def render(path,mid,bars_,bb,skipped_leading_bars=0):
 <div class="header-top"><div class="brand"><h1>{html.escape(path.name)}</h1><div class="brand-sub">ADC PatternLab · {VERSION}</div></div><div class="header-state"><span id="current-pattern">Viewing: —</span><strong id="mode" class="mode-badge">RAW GM NOTES</strong></div></div>
 <div class="summary" title="{header_summary}">{header_summary}</div>
 <div class="header-actions"><div class="action-buttons"><button id="toggle">RAW / QUANTIZED</button><button id="slot-display" type="button" class="quantized-only">Velocity / Accent</button><button id="download-csv" type="button">Download CSV</button><span id="number-status"></span></div><div class="service-area"><span id="service-dot" class="service-dot"></span><span id="service-text" class="service-text">Checking playback service…</span><details class="legend-panel"><summary>Legend ▾</summary><div class="legend-content"><div>Velocity: <i class="lg v0"></i>0 (1–31) <i class="lg v1"></i>1 (32–63) <i class="lg v2"></i>2 (64–95) <i class="lg v3"></i>3 (96–127)</div><div>ADX 6-accent: {accent_legend}</div><div>RAW notes: <i class="lg" style="background:#2563eb"></i>original MIDI note-on; deviation is not color-coded</div><div>RAW: <i class="lg" style="border:2px solid #d32f2f"></i>ORN flam grace · <i class="lg" style="background:#2563eb;border:2px solid #d32f2f"></i>off-grid, omitted from GRID · red label = outside SLOT_MAP</div></div></details></div></div>
-</header><div id="genre-modal-backdrop" class="genre-modal-backdrop" hidden><div class="genre-modal" role="dialog" aria-modal="true" aria-labelledby="genre-modal-title"><h2 id="genre-modal-title">Select genre</h2><p>The filename did not identify a genre, so PatternLab fell back to DRM. Type a 3-character genre code to apply to all pattern cards.</p><label>Genre code <input id="genre-modal-code" type="text" inputmode="text" maxlength="3" placeholder="e.g. SKA" autocomplete="off"/></label><p class="genre-modal-hint">Enter a 3-character genre code. It will be added to every card for this report.</p><div class="genre-modal-actions"><button id="genre-modal-apply" type="button">Apply to all cards</button></div></div></div><main><svg id="matrix" xmlns="http://www.w3.org/2000/svg" width="{sw}" height="{sh}" viewBox="0 0 {sw} {sh}">{''.join(body)}</svg></main><details><summary>Analysis notes</summary><p>Each block is checked only against earlier blocks in the same MIDI file. Pattern identity uses only relative onset tick and raw MIDI note. Velocity and note duration are ignored. A repeated block keeps its original Pattern number and omits the matrix drawing.</p><p>A final odd bar containing only one onset group at its beginning is labeled ENDING HIT and excluded from the pattern catalog.</p><p>Each card initially uses the automatically detected resolution. Its own Resolution selector can immediately switch the reference grid and SLOT quantization among 16, 32, 8T, and 16T without affecting other cards. Reloading the HTML restores the original automatic selections. Grid fit is a separate visual diagnostic: for each candidate grid it reports the percentage of RAW note-on events that fall within 5% of one grid step from the nearest line. Best marks the highest such percentage, with mean normalized error used only to break ties. It does not overwrite the shared rhythm-analysis decision.</p><p>If no SLOT_MAP covers every note, the nearest map is used, the card receives a red border, and uncovered MIDI notes are listed as MISSING NOTES. Ties fall back conservatively toward lower IDs, beginning with LEGACY 12.</p><p>RAW view places every note-on circle at its original MIDI tick position and extends a horizontal line to the recorded note-off position. Very short durations receive a two-pixel minimum display line; the note-on position itself is never moved. The vertical subdivision lines are reference overlays only; changing a card’s Resolution selector never moves RAW notes. Velocity controls circle size. RAW note color is uniform blue and does not encode distance from the selected grid; the existing deviation classes are retained only for internal diagnostics. Notes that currently trigger automatic ORN candidacy use the same blue fill as ordinary RAW notes and are distinguished only by a red outline: removable grace notes of detected flam pairs. Very weak hits (velocity ≤ 30) are a 6-accent strength diagnostic only and do not trigger ORN candidacy. Ordinary off-grid notes that are omitted from the selected GRID resolution keep their RAW fill color, receive a red outline, and show the grid omission reason on hover. Hovering a purple note shows the exact reason, including velocity threshold or flam confidence, tick gap, threshold, and whether the grace is removed from subdivision. Flam main hits remain blue because they stay in the ADX grid.</p><p>The Play button sends MIDI generated from the current Compare Mode directly to the local PatternLab playback service at <code>127.0.0.1:8123</code>, which uses the configured FluidSynth executable and SF2 SoundFont. The GRID display button switches between the original four-band MIDI Velocity view and the ADX 6-accent preview. Each non-duplicate card can play either RAW only or RAW → Quantized. Every included section is repeated twice, and adjacent sections are separated by one quarter-note beat. Quantized playback uses the five playable levels of the JSON-defined 6-accent scheme. The displayed symbol, label, velocity range, and representative velocity come from accent_levels.json; an empty cell represents Rest. Flam grace notes marked for removal from subdivision are intentionally omitted there and belong to ORN; the main hit remains in the grid. Very weak hits remain regular GRID hits when they lie exactly on the selected grid. Only note-ons that already lie exactly on the selected grid are shown in SLOT view; off-grid note-ons are never snapped into a cell. When multiple retained on-grid hits occupy one slot/cell, the strongest velocity is shown.</p><p>SLOT_MAP usage: <code>{html.escape(json.dumps(summary,ensure_ascii=False))}</code></p><p>The shared adc_rhythm_analysis module owns the complete subdivision decision: flam detection, grace-note exclusion, onset phase, note-duration evidence, and conservative filename hints. The same flam-filtered events are used for both phase and duration scoring. Beat anchors and the shared half-beat remain excluded from phase evidence.</p></details><script>(()=>{{
+</header><div id="genre-modal-backdrop" class="genre-modal-backdrop" hidden><div class="genre-modal" role="dialog" aria-modal="true" aria-labelledby="genre-modal-title"><h2 id="genre-modal-title">Select genre</h2><p>The filename did not identify a genre, so PatternLab fell back to DRM. Type a 3-character genre code to apply to all pattern cards.</p><label>Genre code <input id="genre-modal-code" type="text" inputmode="text" maxlength="3" placeholder="e.g. SKA" autocomplete="off"/></label><p class="genre-modal-hint">Enter a 3-character genre code. It will be added to every card for this report.</p><div class="genre-modal-actions"><button id="genre-modal-apply" type="button">Apply to all cards</button></div></div></div><main><svg id="matrix" xmlns="http://www.w3.org/2000/svg" width="{sw}" height="{sh}" viewBox="0 0 {sw} {sh}">{''.join(body)}</svg></main><details><summary>Analysis notes</summary><p>Each block is checked only against earlier blocks in the same MIDI file. Pattern identity is checked after SLOT_MAP abstraction, using relative onset tick and abstract slot; velocity and note duration are ignored. Notes outside the selected map retain raw-note identity. A repeated block keeps its original Pattern number and omits the matrix drawing. When raw GM notes differ but collapse to the same abstract slots, the card and CSV describe the raw-note variant.</p><p>A final odd bar containing only one onset group at its beginning is labeled ENDING HIT and excluded from the pattern catalog.</p><p>Each card initially uses the automatically detected resolution. Its own Resolution selector can immediately switch the reference grid and SLOT quantization among 16, 32, 8T, and 16T without affecting other cards. Reloading the HTML restores the original automatic selections. Grid fit is a separate visual diagnostic: for each candidate grid it reports the percentage of RAW note-on events that fall within 5% of one grid step from the nearest line. Best marks the highest such percentage, with mean normalized error used only to break ties. It does not overwrite the shared rhythm-analysis decision.</p><p>If no SLOT_MAP covers every note, the nearest map is used, the card receives a red border, and uncovered MIDI notes are listed as MISSING NOTES. Ties fall back conservatively toward lower IDs, beginning with LEGACY 12.</p><p>RAW view places every note-on circle at its original MIDI tick position and extends a horizontal line to the recorded note-off position. Very short durations receive a two-pixel minimum display line; the note-on position itself is never moved. The vertical subdivision lines are reference overlays only; changing a card’s Resolution selector never moves RAW notes. Velocity controls circle size. RAW note color is uniform blue and does not encode distance from the selected grid; the existing deviation classes are retained only for internal diagnostics. Notes that currently trigger automatic ORN candidacy use the same blue fill as ordinary RAW notes and are distinguished only by a red outline: removable grace notes of detected flam pairs. Very weak hits (velocity ≤ 30) are a 6-accent strength diagnostic only and do not trigger ORN candidacy. Ordinary off-grid notes that are omitted from the selected GRID resolution keep their RAW fill color, receive a red outline, and show the grid omission reason on hover. Hovering a purple note shows the exact reason, including velocity threshold or flam confidence, tick gap, threshold, and whether the grace is removed from subdivision. Flam main hits remain blue because they stay in the ADX grid.</p><p>The Play button sends MIDI generated from the current Compare Mode directly to the local PatternLab playback service at <code>127.0.0.1:8123</code>, which uses the configured FluidSynth executable and SF2 SoundFont. The GRID display button switches between the original four-band MIDI Velocity view and the ADX 6-accent preview. Each non-duplicate card can play either RAW only or RAW → Quantized. Every included section is repeated twice, and adjacent sections are separated by one quarter-note beat. Quantized playback uses the five playable levels of the JSON-defined 6-accent scheme. The displayed symbol, label, velocity range, and representative velocity come from accent_levels.json; an empty cell represents Rest. Flam grace notes marked for removal from subdivision are intentionally omitted there and belong to ORN; the main hit remains in the grid. Very weak hits remain regular GRID hits when they lie exactly on the selected grid. Only note-ons that already lie exactly on the selected grid are shown in SLOT view; off-grid note-ons are never snapped into a cell. When multiple retained on-grid hits occupy one slot/cell, the strongest velocity is shown.</p><p>SLOT_MAP usage: <code>{html.escape(json.dumps(summary,ensure_ascii=False))}</code></p><p>The shared adc_rhythm_analysis module owns the complete subdivision decision: flam detection, grace-note exclusion, onset phase, note-duration evidence, and conservative filename hints. The same flam-filtered events are used for both phase and duration scoring. Beat anchors and the shared half-beat remain excluded from phase evidence.</p></details><script>(()=>{{
 const s=document.getElementById('matrix'),m=document.getElementById('mode'),slotDisplay=document.getElementById('slot-display');slotDisplay.style.display='none';
 const BLOCK_DATA={block_data_json};
 const ACCENT_SCHEMES={accent_levels_json};
