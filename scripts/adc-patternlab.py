@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""adc-patternlab.py 260814a"
+"""adc-patternlab.py 260815a"
 
 One MIDI -> self-contained interactive HTML/SVG whole-file drum matrix.
 Click the SVG to toggle RAW GM notes and two-bar SLOT_MAP display.
@@ -17,7 +17,7 @@ from adc_rhythm_analysis import (
     SUPPORTED_RESOLUTIONS, analyze_event_rhythm, detect_flams,
 )
 
-SCRIPT_NAME="adc-patternlab.py"; VERSION="260814a"; VERSION_TEXT=f"{SCRIPT_NAME} {VERSION}"
+SCRIPT_NAME="adc-patternlab.py"; VERSION="260815a"; VERSION_TEXT=f"{SCRIPT_NAME} {VERSION}"
 VERY_WEAK_HIT_MAX_VELOCITY=30
 if tuple(SUPPORTED_RESOLUTIONS) != ("16", "32", "8T", "16T"):
     raise RuntimeError(
@@ -387,7 +387,10 @@ def blocks(bars,ev,tpq,filename):
         out[-1].ending_hit=True
     seen={}; next_pattern=1
     for b in out:
-        if b.ending_hit:
+        # Empty time blocks are diagnostic only.  They must never consume a
+        # pattern number, participate in duplicate detection, or become an
+        # exportable catalog entry.
+        if not b.events or b.ending_hit:
             continue
         sig=_pattern_signature(b)
         if sig in seen:
@@ -518,6 +521,7 @@ def raw_grid_fit_summary(block) -> dict:
     return {"best":best,"stats":stats}
 
 def card(b,x,y,w=430,h=470,path=None):
+    is_empty=not b.events
     beats=max(1.0,(b.end-b.start)/max(1,b.subdiv.get("tpq",1)))
     detected=b.subdiv.get("subdivision","unknown")
     initial_subdiv={
@@ -535,11 +539,13 @@ def card(b,x,y,w=430,h=470,path=None):
     initial_cells=subdivision_cells[initial_subdiv]
     initial_grid_omitted_ids=grid_omitted_event_ids(b,initial_subdiv)
     p += [
-        tx(x+10,y+18,f'B{b.no:03d}  bars {bars} · Pattern #{b.pattern_no:03d}',"title"),
+        tx(x+10,y+18,(f'B{b.no:03d}  bars {bars} · EMPTY' if is_empty else f'B{b.no:03d}  bars {bars} · Pattern #{b.pattern_no:03d}'),"title"),
         f'<text x="{x+10:.1f}" y="{y+36:.1f}" class="meta grid-summary" data-prefix="{html.escape(meter)} · {len(b.events)} hits · ">{html.escape(meter)} · {len(b.events)} hits · {initial_cells} cells/beat</text>',
         tx(x+w-10,y+18,f'ID {b.smap.id} {b.smap.name}',"sid","end"),
         tx(x+w-10,y+36,f'{ {"triplet-8T":"triplet-8","triplet-16T":"triplet-16"}.get(b.subdiv["subdivision"],b.subdiv["subdivision"]) } · {b.subdiv["confidence"]}',"meta","end")]
     warning_parts=[]
+    if is_empty:
+        warning_parts.append('EMPTY BLOCK: NO CH10 NOTE-ON · EXPORT DISABLED')
     if b.unknown:
         warning_parts.append('MISSING NOTES: '+','.join(map(str,b.unknown)))
     if initial_grid_omitted_ids:
@@ -660,8 +666,8 @@ def card(b,x,y,w=430,h=470,path=None):
             p.append(f'<rect x="{xx+.6:.2f}" y="{yy+.6:.2f}" width="{max(.5,cell_w-1.2):.2f}" height="{max(.5,sh-1.2):.2f}" rx="1.2" class="slotcell velocity{vlevel} hitstrength{hlevel}"><title>slot {si} {b.smap.slots[si].label}; raw {e.note}; velocity {e.vel} (band {vlevel}); ADX 6-accent {hsymbol} = {hlabel}; duration {e.dur}; resolution {subdiv}</title></rect>')
         p.append('</g>')
     p.append('</g>')
-    foot='click SVG: RAW ↔ GRID' if not b.unknown else 'WARNING · nearest SLOT_MAP used · missing notes: '+','.join(map(str,b.unknown))
-    p += [tx(x+10,y+251,foot,"meta"),card_controls(path,b,x,y+264,w),'</g>']; return ''.join(p)
+    foot=('empty block retained for timeline diagnostics; not a catalog pattern' if is_empty else ('click SVG: RAW ↔ GRID' if not b.unknown else 'WARNING · nearest SLOT_MAP used · missing notes: '+','.join(map(str,b.unknown))))
+    p += [tx(x+10,y+251,foot,"meta"),card_controls(path,b,x,y+264,w,disabled=is_empty),'</g>']; return ''.join(p)
 
 def select_options(items, selected):
     return ''.join(
@@ -706,6 +712,9 @@ def card_controls(path, b, x, y, w=430, disabled=False):
         "triplet-16T":"16T",
     }.get(detected, "16")
     subdivision_options=select_options(SUBDIVISIONS, display_detected)
+    # Empty blocks are never exportable, even if this function is called
+    # without an explicit disabled flag.
+    disabled=bool(disabled or not b.events)
     export_checked=(not disabled and b.duplicate_of is None)
     orn_candidate=any(
         item.get("remove_from_subdivision")
@@ -751,16 +760,16 @@ def render(path,mid,bars_,bb,skipped_leading_bars=0):
     notes=sorted({e.note for b in bb for e in b.events}); summary={}
     for b in bb:
         if not b.ending_hit and b.duplicate_of is None:summary[f'{b.smap.id} {b.smap.name}']=summary.get(f'{b.smap.id} {b.smap.name}',0)+1
-    unique_count=sum(1 for b in bb if not b.ending_hit and b.duplicate_of is None); duplicate_count=sum(1 for b in bb if b.duplicate_of is not None); ending_count=sum(1 for b in bb if b.ending_hit)
+    unique_count=sum(1 for b in bb if b.events and not b.ending_hit and b.duplicate_of is None); duplicate_count=sum(1 for b in bb if b.duplicate_of is not None); ending_count=sum(1 for b in bb if b.ending_hit); empty_count=sum(1 for b in bb if not b.events)
     header_parts=[f"SMF Type {mid.type}",f"TPQ {mid.ticks_per_beat}"]
     if skipped_leading_bars:
         header_parts.append(f"leading empty bars skipped: {skipped_leading_bars}")
     header_parts.extend(embedded_header_metadata(mid))
-    header_parts.extend([f"{len(bars_)} bar(s)",f"{len(bb)} two-bar block(s)",f"unique patterns {unique_count}",f"duplicates {duplicate_count}",f"ending hits {ending_count}",f"CH10 notes: {', '.join(map(str,notes)) or '(none)'}"])
+    header_parts.extend([f"{len(bars_)} bar(s)",f"{len(bb)} two-bar block(s)",f"unique patterns {unique_count}",f"duplicates {duplicate_count}",f"ending hits {ending_count}",f"empty blocks {empty_count}",f"CH10 notes: {', '.join(map(str,notes)) or '(none)'}"])
     header_summary=html.escape(" · ".join(header_parts))
     block_data={}
     for b in bb:
-        if b.ending_hit or b.duplicate_of is not None:
+        if not b.events or b.ending_hit or b.duplicate_of is not None:
             continue
         flam_analysis=detect_flams(b.events,b.subdiv.get("tpq",1),loop_ticks=b.end-b.start,loop_start=b.start,selected_resolution=b.subdiv.get("resolution"))
         excluded=set()
@@ -1272,7 +1281,7 @@ document.getElementById('download-csv').addEventListener('click',()=>{{
 }})();</script></body></html>'''
 
 def main(argv=None):
-    p=argparse.ArgumentParser(prog=SCRIPT_NAME,description="Generate an interactive HTML/SVG drum pattern catalog from one MIDI file."); p.add_argument("input_midi",type=Path); p.add_argument("-o","--output",type=Path); p.add_argument("--slot-maps",type=Path,help="Canonical slot_map_definitions.json (default: beside this script)"); p.add_argument("--accent-levels",type=Path,help="accent_levels.json with 6-accent boundaries/representatives (default: beside this script)"); p.add_argument("--skip-leading-empty-bars",action="store_true",help="omit leading bars without CH10 note-on events while preserving absolute bar numbers"); p.add_argument("--version",action="version",version=VERSION_TEXT); a=p.parse_args(argv)
+    p=argparse.ArgumentParser(prog=SCRIPT_NAME,description="Generate an interactive HTML/SVG drum pattern catalog from one MIDI file."); p.add_argument("input_midi",type=Path); p.add_argument("-o","--output",type=Path); p.add_argument("--slot-maps",type=Path,help="Canonical slot_map_definitions.json (default: beside this script)"); p.add_argument("--accent-levels",type=Path,help="accent_levels.json with 6-accent boundaries/representatives (default: beside this script)"); p.add_argument("--skip-leading-empty-bars",action="store_true",help="omit only leading bars without CH10 note-on events; preserve absolute bar numbers; internal/trailing empty blocks remain visible but are non-exportable"); p.add_argument("--version",action="version",version=VERSION_TEXT); a=p.parse_args(argv)
     if not a.input_midi.is_file():print(f'[ERROR] not found: {a.input_midi}',file=sys.stderr);return 2
     slot_map_path=a.slot_maps or Path(__file__).with_name("slot_map_definitions.json")
     accent_level_path=a.accent_levels or Path(__file__).with_name("accent_levels.json")
