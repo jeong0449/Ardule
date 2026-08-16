@@ -1,0 +1,492 @@
+﻿FILE,START_BAR,END_BAR,NAME,TIME_SIG,SLOT_MAP,EXPORT,GENRE,SUBDIV,ORN,DUPLICATE_OF,SOURCE
+12bar1.mid,1,2,TBR_0001,4/4,LEGACY,YES,TBR,8T,NO,,12bar1.mid:1-2
+12bar1.mid,3,4,,4/4,LEGACY,NO,TBR,8T,NO,TBR_0001,12bar1.mid:3-4; duplicate of TBR_0001; RAW identical; not exported
+12bar1.mid,5,6,TBR_0002,4/4,LEGACY,YES,TBR,8T,NO,,12bar1.mid:5-6
+12bar1.mid,7,8,,4/4,LEGACY,NO,TBR,8T,NO,TBR_0001,12bar1.mid:7-8; duplicate of TBR_0001; RAW identical; not exported
+12bar1.mid,9,10,,4/4,LEGACY,NO,TBR,8T,NO,TBR_0002,12bar1.mid:9-10; duplicate of TBR_0002 after SLOT_MAP abstraction; RAW note 49→52 (CR); not exported
+12bar1.mid,11,12,TBR_0003,4/4,LEGACY,YES,TBR,8T,NO,,12bar1.mid:11-12
+12bar1.mid,13,13,,4/4,LEGACY,NO,TBR,16,NO,,12bar1.mid:13; empty block (0 CH10 note-on); not exported
+12bar4.mid,1,2,TBR_0004,4/4,LEGACY,YES,TBR,8T,NO,,12bar4.mid:1-2
+12bar4.mid,3,4,,4/4,LEGACY,NO,TBR,8T,NO,TBR_0004,12bar4.mid:3-4; duplicate of TBR_0004; RAW identical; not exported
+12bar4.mid,5,6,TBR_0005,4/4,LEGACY,YES,TBR,8T,NO,,12bar4.mid:5-6
+12bar4.mid,7,8,TBR_0006,4/4,LEGACY,YES,TBR,8T,NO,,12bar4.mid:7-8
+12bar4.mid,9,10,TBR_0007,4/4,LEGACY,YES,TBR,8T,NO,,12bar4.mid:9-10
+12bar4.mid,11,12,TBR_0008,4/4,LEGACY,YES,TBR,8T,NO,,12bar4.mid:11-12
+12bar4.mid,13,13,,4/4,LEGACY,NO,TBR,16,NO,,12bar4.mid:13; empty block (0 CH10 note-on); not exported
+12bar6.mid,1,2,TBR_0009,4/4,LEGACY,YES,TBR,8T,NO,,12bar6.mid:1-2
+12bar6.mid,3,4,,4/4,LEGACY,NO,TBR,8T,NO,TBR_0009,12bar6.mid:3-4; duplicate of TBR_0009; RAW identical; not exported
+12bar6.mid,5,6,,4/4,LEGACY,NO,TBR,8T,NO,TBR_0009,12bar6.mid:5-6; duplicate of TBR_0009; RAW identical; not exported
+12bar6.mid,7,8,TBR_0010,4/4,LEGACY,YES,TBR,8T,NO,,12bar6.mid:7-8
+12bar6.mid,9,10,TBR_0011,4/4,LEGACY,YES,TBR,8T,NO,,12bar6.mid:9-10
+12bar6.mid,11,12,TBR_0012,4/4,LEGACY,YES,TBR,8T,NO,,12bar6.mid:11-12
+12bar7.mid,1,2,TBR_0013,4/4,LEGACY,YES,TBR,8T,NO,,12bar7.mid:1-2
+12bar7.mid,3,4,,4/4,LEGACY,NO,TBR,8T,NO,TBR_0013,12bar7.mid:3-4; duplicate of TBR_0013; RAW identical; not exported
+12bar7.mid,5,6,,4/4,LEGACY,NO,TBR,8T,NO,TBR_0013,12bar7.mid:5-6; duplicate of TBR_0013; RAW identical; not exported
+12bar7.mid,7,8,TBR_0014,4/4,LEGACY,YES,TBR,16T,NO,,12bar7.mid:7-8
+12bar7.mid,9,10,TBR_0015,4/4,LEGACY,YES,TBR,8T,NO,,12bar7.mid:9-10
+12bar7.mid,11,12,TBR_0016,4/4,LEGACY,YES,TBR,8T,NO,,12bar7.mid:11-12
+34time2.mid,1,2,THF_0001,3/4,LEGACY,YES,THF,16,NO,,34time2.mid:1-2
+34time2.mid,3,4,,3/4,LEGACY,NO,THF,16,NO,THF_0001,34time2.mid:3-4; duplicate of THF_0001; RAW identical; not exported
+34time2.mid,5,6,,3/4,LEGACY,NO,THF,16,NO,THF_0001,34time2.mid:5-6; duplicate of THF_0001; RAW identical; not exported
+34time2.mid,7,8,THF_0002,3/4,LEGACY,YES,THF,16,NO,,34time2.mid:7-8
+34time2.mid,9,10,THF_0003,3/4,LEGACY,YES,THF,16,NO,,34time2.mid:9-10
+34time2.mid,11,12,THF_0004,3/4,LEGACY,YES,THF,16,NO,,34time2.mid:11-12
+34time2.mid,13,14,,3/4,LEGACY,NO,THF,16,NO,THF_0004,34time2.mid:13-14; duplicate of THF_0004; RAW identical; not exported
+34time2.mid,15,16,THF_0005,3/4,LEGACY,YES,THF,16,NO,,34time2.mid:15-16
+34time2.mid,17,17,,3/4,LEGACY,NO,THF,16,NO,,34time2.mid:17; ending hit only; excluded from pattern catalog
+34time8.mid,1,2,THF_0006,3/4,LEGACY,YES,THF,16,NO,,34time8.mid:1-2
+34time8.mid,3,4,,3/4,LEGACY,NO,THF,16,NO,THF_0006,34time8.mid:3-4; duplicate of THF_0006; RAW identical; not exported
+34time8.mid,5,6,,3/4,LEGACY,NO,THF,16,NO,THF_0006,34time8.mid:5-6; duplicate of THF_0006; RAW identical; not exported
+34time8.mid,7,8,THF_0007,3/4,LEGACY,YES,THF,16,NO,,34time8.mid:7-8
+34time8.mid,9,10,THF_0008,3/4,LEGACY,YES,THF,16,NO,,34time8.mid:9-10
+34time8.mid,11,12,THF_0009,3/4,LEGACY,YES,THF,16,NO,,34time8.mid:11-12
+34time8.mid,13,14,THF_0010,3/4,LEGACY,YES,THF,16,NO,,34time8.mid:13-14
+34time8.mid,15,16,,3/4,LEGACY,NO,THF,16,NO,THF_0009,34time8.mid:15-16; duplicate of THF_0009; RAW identical; not exported
+34time8.mid,17,17,,3/4,LEGACY,NO,THF,16,NO,,34time8.mid:17; ending hit only; excluded from pattern catalog
+34time13.mid,1,2,THF_0011,3/4,LEGACY,YES,THF,16,NO,,34time13.mid:1-2
+34time13.mid,3,4,,3/4,LEGACY,NO,THF,16,NO,THF_0011,34time13.mid:3-4; duplicate of THF_0011; RAW identical; not exported
+34time13.mid,5,6,,3/4,LEGACY,NO,THF,16,NO,THF_0011,34time13.mid:5-6; duplicate of THF_0011; RAW identical; not exported
+34time13.mid,7,8,THF_0012,3/4,LEGACY,YES,THF,16,NO,,34time13.mid:7-8
+34time13.mid,9,10,THF_0013,3/4,LEGACY,YES,THF,16,NO,,34time13.mid:9-10
+34time13.mid,11,12,THF_0014,3/4,LEGACY,YES,THF,16,NO,,34time13.mid:11-12
+34time13.mid,13,14,,3/4,LEGACY,NO,THF,16,NO,THF_0014,34time13.mid:13-14; duplicate of THF_0014; RAW identical; not exported
+34time13.mid,15,16,,3/4,LEGACY,NO,THF,16,NO,THF_0014,34time13.mid:15-16; duplicate of THF_0014; RAW identical; not exported
+34time13.mid,17,17,,3/4,LEGACY,NO,THF,16,NO,,34time13.mid:17; ending hit only; excluded from pattern catalog
+34time19.mid,1,2,THF_0015,3/4,LEGACY,YES,THF,16,NO,,34time19.mid:1-2
+34time19.mid,3,4,,3/4,LEGACY,NO,THF,16,NO,THF_0015,34time19.mid:3-4; duplicate of THF_0015; RAW identical; not exported
+34time19.mid,5,6,,3/4,LEGACY,NO,THF,16,NO,THF_0015,34time19.mid:5-6; duplicate of THF_0015; RAW identical; not exported
+34time19.mid,7,8,THF_0016,3/4,LEGACY,YES,THF,16,NO,,34time19.mid:7-8
+34time19.mid,9,10,THF_0017,3/4,LEGACY,YES,THF,16,NO,,34time19.mid:9-10
+34time19.mid,11,12,THF_0018,3/4,LEGACY,YES,THF,16,NO,,34time19.mid:11-12
+34time19.mid,13,14,,3/4,LEGACY,NO,THF,16,NO,THF_0018,34time19.mid:13-14; duplicate of THF_0018; RAW identical; not exported
+34time19.mid,15,16,,3/4,LEGACY,NO,THF,16,NO,THF_0018,34time19.mid:15-16; duplicate of THF_0018; RAW identical; not exported
+34time19.mid,17,17,,3/4,LEGACY,NO,THF,16,NO,,34time19.mid:17; ending hit only; excluded from pattern catalog
+34time23.mid,1,2,THF_0019,3/4,LEGACY,YES,THF,16,NO,,34time23.mid:1-2
+34time23.mid,3,4,,3/4,LEGACY,NO,THF,16,NO,THF_0019,34time23.mid:3-4; duplicate of THF_0019; RAW identical; not exported
+34time23.mid,5,6,,3/4,LEGACY,NO,THF,16,NO,THF_0019,34time23.mid:5-6; duplicate of THF_0019; RAW identical; not exported
+34time23.mid,7,8,THF_0020,3/4,LEGACY,YES,THF,16,NO,,34time23.mid:7-8
+34time23.mid,9,10,THF_0021,3/4,LEGACY,YES,THF,16,NO,,34time23.mid:9-10
+34time23.mid,11,12,THF_0022,3/4,LEGACY,YES,THF,16,NO,,34time23.mid:11-12
+34time23.mid,13,14,,3/4,LEGACY,NO,THF,16,NO,THF_0022,34time23.mid:13-14; duplicate of THF_0022; RAW identical; not exported
+34time23.mid,15,16,,3/4,LEGACY,NO,THF,16,NO,THF_0022,34time23.mid:15-16; duplicate of THF_0022; RAW identical; not exported
+34time23.mid,17,17,,3/4,LEGACY,NO,THF,16,NO,,34time23.mid:17; ending hit only; excluded from pattern catalog
+68time2.mid,1,2,SXE_0001,6/8,LEGACY,YES,SXE,16,NO,,68time2.mid:1-2
+68time2.mid,3,4,,6/8,LEGACY,NO,SXE,16,NO,SXE_0001,68time2.mid:3-4; duplicate of SXE_0001; RAW identical; not exported
+68time2.mid,5,6,,6/8,LEGACY,NO,SXE,16,NO,SXE_0001,68time2.mid:5-6; duplicate of SXE_0001; RAW identical; not exported
+68time2.mid,7,8,SXE_0002,6/8,LEGACY,YES,SXE,16,NO,,68time2.mid:7-8
+68time2.mid,9,10,SXE_0003,6/8,LEGACY,YES,SXE,16,NO,,68time2.mid:9-10
+68time2.mid,11,12,SXE_0004,6/8,LEGACY,YES,SXE,16,NO,,68time2.mid:11-12
+68time2.mid,13,14,,6/8,LEGACY,NO,SXE,16,NO,SXE_0004,68time2.mid:13-14; duplicate of SXE_0004; RAW identical; not exported
+68time2.mid,15,16,,6/8,LEGACY,NO,SXE,16,NO,SXE_0004,68time2.mid:15-16; duplicate of SXE_0004; RAW identical; not exported
+68time7.mid,1,2,SXE_0005,6/8,LEGACY,YES,SXE,16,NO,,68time7.mid:1-2
+68time7.mid,3,4,,6/8,LEGACY,NO,SXE,16,NO,SXE_0005,68time7.mid:3-4; duplicate of SXE_0005; RAW identical; not exported
+68time7.mid,5,6,,6/8,LEGACY,NO,SXE,16,NO,SXE_0005,68time7.mid:5-6; duplicate of SXE_0005; RAW identical; not exported
+68time7.mid,7,8,,6/8,LEGACY,NO,SXE,16,NO,SXE_0005,68time7.mid:7-8; duplicate of SXE_0005; RAW identical; not exported
+68time7.mid,9,10,SXE_0006,6/8,LEGACY,YES,SXE,16,NO,,68time7.mid:9-10
+68time7.mid,11,12,SXE_0007,6/8,LEGACY,YES,SXE,16,NO,,68time7.mid:11-12
+68time7.mid,13,14,,6/8,LEGACY,NO,SXE,16,NO,SXE_0007,68time7.mid:13-14; duplicate of SXE_0007; RAW identical; not exported
+68time7.mid,15,16,,6/8,LEGACY,NO,SXE,16,NO,SXE_0007,68time7.mid:15-16; duplicate of SXE_0007; RAW identical; not exported
+68time10.mid,1,2,SXE_0008,6/8,LEGACY,YES,SXE,16,NO,,68time10.mid:1-2
+68time10.mid,3,4,,6/8,LEGACY,NO,SXE,16,NO,SXE_0008,68time10.mid:3-4; duplicate of SXE_0008; RAW identical; not exported
+68time10.mid,5,6,,6/8,LEGACY,NO,SXE,16,NO,SXE_0008,68time10.mid:5-6; duplicate of SXE_0008; RAW identical; not exported
+68time10.mid,7,8,SXE_0009,6/8,LEGACY,YES,SXE,16,NO,,68time10.mid:7-8
+68time10.mid,9,10,SXE_0010,6/8,LEGACY,YES,SXE,16,NO,,68time10.mid:9-10
+68time10.mid,11,12,SXE_0011,6/8,LEGACY,YES,SXE,16,NO,,68time10.mid:11-12
+68time10.mid,13,14,,6/8,LEGACY,NO,SXE,16,NO,SXE_0011,68time10.mid:13-14; duplicate of SXE_0011; RAW identical; not exported
+68time10.mid,15,16,,6/8,LEGACY,NO,SXE,16,NO,SXE_0011,68time10.mid:15-16; duplicate of SXE_0011; RAW identical; not exported
+68time15.mid,1,2,SXE_0012,6/8,LEGACY,YES,SXE,16,NO,,68time15.mid:1-2
+68time15.mid,3,4,,6/8,LEGACY,NO,SXE,16,NO,SXE_0012,68time15.mid:3-4; duplicate of SXE_0012; RAW identical; not exported
+68time15.mid,5,6,,6/8,LEGACY,NO,SXE,16,NO,SXE_0012,68time15.mid:5-6; duplicate of SXE_0012; RAW identical; not exported
+68time15.mid,7,8,SXE_0013,6/8,LEGACY,YES,SXE,16,NO,,68time15.mid:7-8
+68time15.mid,9,10,SXE_0014,6/8,LEGACY,YES,SXE,16,NO,,68time15.mid:9-10
+68time15.mid,11,12,SXE_0015,6/8,LEGACY,YES,SXE,16,NO,,68time15.mid:11-12
+68time15.mid,13,14,,6/8,LEGACY,NO,SXE,16,NO,SXE_0015,68time15.mid:13-14; duplicate of SXE_0015; RAW identical; not exported
+68time15.mid,15,16,,6/8,LEGACY,NO,SXE,16,NO,SXE_0015,68time15.mid:15-16; duplicate of SXE_0015; RAW identical; not exported
+68time20.mid,1,2,SXE_0016,6/8,LEGACY,YES,SXE,16,NO,,68time20.mid:1-2
+68time20.mid,3,4,,6/8,LEGACY,NO,SXE,16,NO,SXE_0016,68time20.mid:3-4; duplicate of SXE_0016; RAW identical; not exported
+68time20.mid,5,6,,6/8,LEGACY,NO,SXE,16,NO,SXE_0016,68time20.mid:5-6; duplicate of SXE_0016; RAW identical; not exported
+68time20.mid,7,8,SXE_0017,6/8,LEGACY,YES,SXE,16,NO,,68time20.mid:7-8
+68time20.mid,9,10,SXE_0018,6/8,LEGACY,YES,SXE,16,NO,,68time20.mid:9-10
+68time20.mid,11,12,SXE_0019,6/8,LEGACY,YES,SXE,16,NO,,68time20.mid:11-12
+68time20.mid,13,14,,6/8,LEGACY,NO,SXE,16,NO,SXE_0019,68time20.mid:13-14; duplicate of SXE_0019; RAW identical; not exported
+68time20.mid,15,16,,6/8,LEGACY,NO,SXE,16,NO,SXE_0019,68time20.mid:15-16; duplicate of SXE_0019; RAW identical; not exported
+Blues2.mid,1,2,BLU_0022,4/4,LEGACY,YES,BLU,8T,NO,,Blues2.mid:1-2
+Blues2.mid,3,4,,4/4,LEGACY,NO,BLU,8T,NO,BLU_0022,Blues2.mid:3-4; duplicate of BLU_0022; RAW identical; not exported
+Blues2.mid,5,6,,4/4,LEGACY,NO,BLU,8T,NO,BLU_0022,Blues2.mid:5-6; duplicate of BLU_0022; RAW identical; not exported
+Blues2.mid,7,8,BLU_0023,4/4,LEGACY,YES,BLU,8T,NO,,Blues2.mid:7-8
+Blues2.mid,9,10,BLU_0024,4/4,LEGACY,YES,BLU,8T,NO,,Blues2.mid:9-10
+Blues2.mid,11,12,BLU_0025,4/4,LEGACY,YES,BLU,8T,NO,,Blues2.mid:11-12
+Blues2.mid,13,14,,4/4,LEGACY,NO,BLU,8T,NO,BLU_0025,Blues2.mid:13-14; duplicate of BLU_0025; RAW identical; not exported
+Blues2.mid,15,16,,4/4,LEGACY,NO,BLU,8T,NO,BLU_0025,Blues2.mid:15-16; duplicate of BLU_0025; RAW identical; not exported
+Blues2.mid,17,17,,4/4,LEGACY,NO,BLU,16,NO,,Blues2.mid:17; empty block (0 CH10 note-on); not exported
+Blues7.mid,1,2,BLU_0026,4/4,LEGACY,YES,BLU,8T,NO,,Blues7.mid:1-2
+Blues7.mid,3,4,,4/4,LEGACY,NO,BLU,8T,NO,BLU_0026,Blues7.mid:3-4; duplicate of BLU_0026; RAW identical; not exported
+Blues7.mid,5,6,,4/4,LEGACY,NO,BLU,8T,NO,BLU_0026,Blues7.mid:5-6; duplicate of BLU_0026; RAW identical; not exported
+Blues7.mid,7,8,BLU_0027,4/4,LEGACY,YES,BLU,8T,NO,,Blues7.mid:7-8
+Blues7.mid,9,10,BLU_0028,4/4,LEGACY,YES,BLU,8T,NO,,Blues7.mid:9-10
+Blues7.mid,11,12,BLU_0029,4/4,LEGACY,YES,BLU,8T,NO,,Blues7.mid:11-12
+Blues7.mid,13,14,BLU_0030,4/4,LEGACY,YES,BLU,8T,NO,,Blues7.mid:13-14
+Blues7.mid,15,16,,4/4,LEGACY,NO,BLU,8T,NO,BLU_0029,Blues7.mid:15-16; duplicate of BLU_0029; RAW identical; not exported
+Blues7.mid,17,17,,4/4,LEGACY,NO,BLU,16,NO,,Blues7.mid:17; empty block (0 CH10 note-on); not exported
+Blues10.mid,1,2,BLU_0031,4/4,LEGACY,YES,BLU,8T,NO,,Blues10.mid:1-2
+Blues10.mid,3,4,BLU_0032,4/4,LEGACY,YES,BLU,8T,NO,,Blues10.mid:3-4
+Blues10.mid,5,6,,4/4,LEGACY,NO,BLU,8T,NO,BLU_0031,Blues10.mid:5-6; duplicate of BLU_0031; RAW identical; not exported
+Blues10.mid,7,8,BLU_0033,4/4,LEGACY,YES,BLU,8T,NO,,Blues10.mid:7-8
+Blues10.mid,9,10,BLU_0034,4/4,LEGACY,YES,BLU,8T,NO,,Blues10.mid:9-10
+Blues10.mid,11,12,BLU_0035,4/4,LEGACY,YES,BLU,8T,NO,,Blues10.mid:11-12
+Blues10.mid,13,14,,4/4,LEGACY,NO,BLU,8T,NO,BLU_0035,Blues10.mid:13-14; duplicate of BLU_0035; RAW identical; not exported
+Blues10.mid,15,16,,4/4,LEGACY,NO,BLU,8T,NO,BLU_0035,Blues10.mid:15-16; duplicate of BLU_0035; RAW identical; not exported
+Blues10.mid,17,17,,4/4,LEGACY,NO,BLU,16,NO,,Blues10.mid:17; empty block (0 CH10 note-on); not exported
+Contemporary4.mid,1,2,CON_0001,4/4,LEGACY,YES,CON,16,NO,,Contemporary4.mid:1-2
+Contemporary4.mid,3,4,,4/4,LEGACY,NO,CON,16,NO,CON_0001,Contemporary4.mid:3-4; duplicate of CON_0001; RAW identical; not exported
+Contemporary4.mid,5,6,,4/4,LEGACY,NO,CON,16,NO,CON_0001,Contemporary4.mid:5-6; duplicate of CON_0001; RAW identical; not exported
+Contemporary4.mid,7,8,CON_0002,4/4,LEGACY,YES,CON,16,NO,,Contemporary4.mid:7-8
+Contemporary4.mid,9,10,CON_0003,4/4,LEGACY,YES,CON,16,NO,,Contemporary4.mid:9-10
+Contemporary4.mid,11,12,,4/4,LEGACY,NO,CON,16,NO,CON_0003,Contemporary4.mid:11-12; duplicate of CON_0003 after SLOT_MAP abstraction; RAW note 49→52 (CR); not exported
+Contemporary4.mid,13,14,,4/4,LEGACY,NO,CON,16,NO,CON_0003,Contemporary4.mid:13-14; duplicate of CON_0003; RAW identical; not exported
+Contemporary4.mid,15,16,,4/4,LEGACY,NO,CON,16,NO,CON_0003,Contemporary4.mid:15-16; duplicate of CON_0003 after SLOT_MAP abstraction; RAW note 49→52 (CR); not exported
+Contemporary7.mid,1,2,CON_0004,4/4,LEGACY,YES,CON,16,NO,,Contemporary7.mid:1-2
+Contemporary7.mid,3,4,CON_0005,4/4,LEGACY,YES,CON,16,NO,,Contemporary7.mid:3-4
+Contemporary7.mid,5,6,CON_0006,4/4,LEGACY,YES,CON,16,NO,,Contemporary7.mid:5-6
+Contemporary7.mid,7,8,CON_0007,4/4,LEGACY,YES,CON,16,NO,,Contemporary7.mid:7-8
+Contemporary7.mid,9,10,CON_0008,4/4,LEGACY,YES,CON,16,NO,,Contemporary7.mid:9-10
+Contemporary7.mid,11,12,CON_0009,4/4,LEGACY,YES,CON,16,NO,,Contemporary7.mid:11-12
+Contemporary7.mid,13,14,CON_0010,4/4,LEGACY,YES,CON,16,NO,,Contemporary7.mid:13-14
+Contemporary7.mid,15,16,CON_0011,4/4,LEGACY,YES,CON,16,NO,,Contemporary7.mid:15-16
+Contemporary10.mid,1,2,CON_0012,4/4,LEGACY,YES,CON,8T,NO,,Contemporary10.mid:1-2
+Contemporary10.mid,3,4,,4/4,LEGACY,NO,CON,8T,NO,CON_0012,Contemporary10.mid:3-4; duplicate of CON_0012; RAW identical; not exported
+Contemporary10.mid,5,6,,4/4,LEGACY,NO,CON,8T,NO,CON_0012,Contemporary10.mid:5-6; duplicate of CON_0012; RAW identical; not exported
+Contemporary10.mid,7,8,CON_0013,4/4,LEGACY,YES,CON,8T,NO,,Contemporary10.mid:7-8
+Contemporary10.mid,9,10,CON_0014,4/4,LEGACY,YES,CON,8T,NO,,Contemporary10.mid:9-10
+Contemporary10.mid,11,12,CON_0015,4/4,LEGACY,YES,CON,8T,NO,,Contemporary10.mid:11-12
+Contemporary10.mid,13,14,CON_0016,4/4,LEGACY,YES,CON,8T,NO,,Contemporary10.mid:13-14
+Contemporary10.mid,15,16,CON_0017,4/4,LEGACY,YES,CON,8T,NO,,Contemporary10.mid:15-16
+Contemporary16.mid,1,2,CON_0018,4/4,LEGACY,YES,CON,16,NO,,Contemporary16.mid:1-2
+Contemporary16.mid,3,4,CON_0019,4/4,LEGACY,YES,CON,16,NO,,Contemporary16.mid:3-4
+Contemporary16.mid,5,6,CON_0020,4/4,LEGACY,YES,CON,16,NO,,Contemporary16.mid:5-6
+Contemporary16.mid,7,8,CON_0021,4/4,LEGACY,YES,CON,16,NO,,Contemporary16.mid:7-8
+Contemporary16.mid,9,10,CON_0022,4/4,LEGACY,YES,CON,16,NO,,Contemporary16.mid:9-10
+Contemporary16.mid,11,12,CON_0023,4/4,LEGACY,YES,CON,16,NO,,Contemporary16.mid:11-12
+Contemporary16.mid,13,14,CON_0024,4/4,LEGACY,YES,CON,16,NO,,Contemporary16.mid:13-14
+Contemporary16.mid,15,16,,4/4,LEGACY,NO,CON,16,NO,CON_0024,Contemporary16.mid:15-16; duplicate of CON_0024; RAW identical; not exported
+Contemporary27.mid,1,2,CON_0025,4/4,LEGACY,YES,CON,16,NO,,Contemporary27.mid:1-2
+Contemporary27.mid,3,4,,4/4,LEGACY,NO,CON,16,NO,CON_0025,Contemporary27.mid:3-4; duplicate of CON_0025; RAW identical; not exported
+Contemporary27.mid,5,6,,4/4,LEGACY,NO,CON,16,NO,CON_0025,Contemporary27.mid:5-6; duplicate of CON_0025; RAW identical; not exported
+Contemporary27.mid,7,8,,4/4,LEGACY,NO,CON,16,NO,CON_0025,Contemporary27.mid:7-8; duplicate of CON_0025; RAW identical; not exported
+Contemporary27.mid,9,10,CON_0026,4/4,LEGACY,YES,CON,16,NO,,Contemporary27.mid:9-10
+Contemporary27.mid,11,12,CON_0027,4/4,LEGACY,YES,CON,16,NO,,Contemporary27.mid:11-12
+Contemporary27.mid,13,14,CON_0028,4/4,LEGACY,YES,CON,16,NO,,Contemporary27.mid:13-14
+Contemporary27.mid,15,16,CON_0029,4/4,LEGACY,YES,CON,16,NO,,Contemporary27.mid:15-16
+Contemporary33.mid,1,2,CON_0030,4/4,LEGACY,YES,CON,16,NO,,Contemporary33.mid:1-2
+Contemporary33.mid,3,4,,4/4,LEGACY,NO,CON,16,NO,CON_0030,Contemporary33.mid:3-4; duplicate of CON_0030; RAW identical; not exported
+Contemporary33.mid,5,6,,4/4,LEGACY,NO,CON,16,NO,CON_0030,Contemporary33.mid:5-6; duplicate of CON_0030; RAW identical; not exported
+Contemporary33.mid,7,8,CON_0031,4/4,LEGACY,YES,CON,16,NO,,Contemporary33.mid:7-8
+Contemporary33.mid,9,10,CON_0032,4/4,LEGACY,YES,CON,16,NO,,Contemporary33.mid:9-10
+Contemporary33.mid,11,12,CON_0033,4/4,LEGACY,YES,CON,16,NO,,Contemporary33.mid:11-12
+Contemporary33.mid,13,14,,4/4,LEGACY,NO,CON,16,NO,CON_0033,Contemporary33.mid:13-14; duplicate of CON_0033; RAW identical; not exported
+Contemporary33.mid,15,16,CON_0034,4/4,LEGACY,YES,CON,16,NO,,Contemporary33.mid:15-16
+Contemporary38.mid,1,2,CON_0035,4/4,LEGACY,YES,CON,16,NO,,Contemporary38.mid:1-2
+Contemporary38.mid,3,4,CON_0036,4/4,LEGACY,YES,CON,16,NO,,Contemporary38.mid:3-4
+Contemporary38.mid,5,6,,4/4,LEGACY,NO,CON,16,NO,CON_0035,Contemporary38.mid:5-6; duplicate of CON_0035; RAW identical; not exported
+Contemporary38.mid,7,8,CON_0037,4/4,LEGACY,YES,CON,16,NO,,Contemporary38.mid:7-8
+Contemporary38.mid,9,10,CON_0038,4/4,LEGACY,YES,CON,8T,NO,,Contemporary38.mid:9-10
+Contemporary38.mid,11,12,CON_0039,4/4,LEGACY,YES,CON,16,NO,,Contemporary38.mid:11-12
+Contemporary38.mid,13,14,,4/4,LEGACY,NO,CON,16,NO,CON_0038,Contemporary38.mid:13-14; duplicate of CON_0038; RAW identical; not exported
+Contemporary38.mid,15,16,,4/4,LEGACY,NO,CON,16,NO,CON_0039,Contemporary38.mid:15-16; duplicate of CON_0039; RAW identical; not exported
+Contemporary41.mid,1,2,CON_0040,4/4,LEGACY,YES,CON,16,NO,,Contemporary41.mid:1-2
+Contemporary41.mid,3,4,,4/4,LEGACY,NO,CON,16,NO,CON_0040,Contemporary41.mid:3-4; duplicate of CON_0040; RAW identical; not exported
+Contemporary41.mid,5,6,,4/4,LEGACY,NO,CON,16,NO,CON_0040,Contemporary41.mid:5-6; duplicate of CON_0040; RAW identical; not exported
+Contemporary41.mid,7,8,CON_0041,4/4,LEGACY,YES,CON,16,NO,,Contemporary41.mid:7-8
+Contemporary41.mid,9,10,CON_0042,4/4,LEGACY,YES,CON,8T,NO,,Contemporary41.mid:9-10
+Contemporary41.mid,11,12,CON_0043,4/4,LEGACY,YES,CON,16,NO,,Contemporary41.mid:11-12
+Contemporary41.mid,13,14,,4/4,LEGACY,NO,CON,16,NO,CON_0042,Contemporary41.mid:13-14; duplicate of CON_0042; RAW identical; not exported
+Contemporary41.mid,15,16,,4/4,LEGACY,NO,CON,16,NO,CON_0043,Contemporary41.mid:15-16; duplicate of CON_0043; RAW identical; not exported
+Contemporary46.mid,1,2,CON_0044,4/4,LEGACY,YES,CON,16,NO,,Contemporary46.mid:1-2
+Contemporary46.mid,3,4,CON_0045,4/4,LEGACY,YES,CON,16,NO,,Contemporary46.mid:3-4
+Contemporary46.mid,5,6,CON_0046,4/4,LEGACY,YES,CON,16,NO,,Contemporary46.mid:5-6
+Contemporary46.mid,7,8,CON_0047,4/4,LEGACY,YES,CON,16,NO,,Contemporary46.mid:7-8
+Contemporary46.mid,9,10,CON_0048,4/4,LEGACY,YES,CON,16,NO,,Contemporary46.mid:9-10
+Contemporary46.mid,11,12,,4/4,LEGACY,NO,CON,16,NO,CON_0048,Contemporary46.mid:11-12; duplicate of CON_0048; RAW identical; not exported
+Contemporary46.mid,13,14,CON_0049,4/4,LEGACY,YES,CON,16,NO,,Contemporary46.mid:13-14
+Contemporary46.mid,15,16,CON_0050,4/4,LEGACY,YES,CON,16,NO,,Contemporary46.mid:15-16
+Contemporary48.mid,1,2,CON_0051,4/4,LEGACY,YES,CON,16,NO,,Contemporary48.mid:1-2
+Contemporary48.mid,3,4,,4/4,LEGACY,NO,CON,16,NO,CON_0051,Contemporary48.mid:3-4; duplicate of CON_0051; RAW identical; not exported
+Contemporary48.mid,5,6,,4/4,LEGACY,NO,CON,16,NO,CON_0051,Contemporary48.mid:5-6; duplicate of CON_0051; RAW identical; not exported
+Contemporary48.mid,7,8,CON_0052,4/4,LEGACY,YES,CON,16,NO,,Contemporary48.mid:7-8
+Contemporary48.mid,9,10,CON_0053,4/4,LEGACY,YES,CON,16,NO,,Contemporary48.mid:9-10
+Contemporary48.mid,11,12,CON_0054,4/4,LEGACY,YES,CON,16,NO,,Contemporary48.mid:11-12
+Contemporary48.mid,13,14,CON_0055,4/4,LEGACY,YES,CON,16,NO,,Contemporary48.mid:13-14
+Contemporary48.mid,15,16,,4/4,LEGACY,NO,CON,16,NO,CON_0054,Contemporary48.mid:15-16; duplicate of CON_0054; RAW identical; not exported
+ethnic5.mid,1,2,ETH_0001,4/4,ADD4,YES,ETH,16,NO,,ethnic5.mid:1-2
+ethnic5.mid,3,4,ETH_0002,4/4,ADD4,YES,ETH,16,NO,,ethnic5.mid:3-4
+ethnic5.mid,5,6,,4/4,ADD4,NO,ETH,16,NO,ETH_0001,ethnic5.mid:5-6; duplicate of ETH_0001; RAW identical; not exported
+ethnic5.mid,7,8,,4/4,ADD4,NO,ETH,16,NO,ETH_0002,ethnic5.mid:7-8; duplicate of ETH_0002; RAW identical; not exported
+ethnic5.mid,9,10,ETH_0003,4/4,ADD4,YES,ETH,16,NO,,ethnic5.mid:9-10
+ethnic5.mid,11,12,ETH_0004,4/4,ADD4,YES,ETH,16,NO,,ethnic5.mid:11-12
+ethnic5.mid,13,14,,4/4,ADD4,NO,ETH,16,NO,ETH_0003,ethnic5.mid:13-14; duplicate of ETH_0003; RAW identical; not exported
+ethnic5.mid,15,16,,4/4,ADD4,NO,ETH,16,NO,ETH_0004,ethnic5.mid:15-16; duplicate of ETH_0004; RAW identical; not exported
+ethnic11.mid,1,2,ETH_0005,4/4,LEGACY,YES,ETH,16,NO,,ethnic11.mid:1-2
+ethnic11.mid,3,4,ETH_0006,4/4,LEGACY,YES,ETH,16,NO,,ethnic11.mid:3-4
+ethnic11.mid,5,6,ETH_0007,4/4,LEGACY,YES,ETH,16,NO,,ethnic11.mid:5-6
+ethnic11.mid,7,8,,4/4,LEGACY,NO,ETH,16,NO,ETH_0007,ethnic11.mid:7-8; duplicate of ETH_0007; RAW identical; not exported
+ethnic11.mid,9,10,ETH_0008,4/4,ADD3,YES,ETH,16,NO,,ethnic11.mid:9-10
+ethnic11.mid,11,12,ETH_0009,4/4,ADD3,YES,ETH,16,NO,,ethnic11.mid:11-12
+ethnic11.mid,13,14,ETH_0010,4/4,ADD3,YES,ETH,16,NO,,ethnic11.mid:13-14
+ethnic11.mid,15,16,ETH_0011,4/4,ADD3,YES,ETH,16,NO,,ethnic11.mid:15-16
+ethnic24.mid,1,2,ETH_0012,4/4,LEGACY,YES,ETH,16,NO,,ethnic24.mid:1-2
+ethnic24.mid,3,4,,4/4,LEGACY,NO,ETH,16,NO,ETH_0012,ethnic24.mid:3-4; duplicate of ETH_0012; RAW identical; not exported
+ethnic24.mid,5,6,,4/4,LEGACY,NO,ETH,16,NO,ETH_0012,ethnic24.mid:5-6; duplicate of ETH_0012; RAW identical; not exported
+ethnic24.mid,7,8,,4/4,LEGACY,NO,ETH,16,NO,ETH_0012,ethnic24.mid:7-8; duplicate of ETH_0012; RAW identical; not exported
+ethnic24.mid,9,10,ETH_0013,4/4,ADD1,YES,ETH,16,NO,,ethnic24.mid:9-10
+ethnic24.mid,11,12,,4/4,ADD1,NO,ETH,16,NO,ETH_0013,ethnic24.mid:11-12; duplicate of ETH_0013; RAW identical; not exported
+ethnic24.mid,13,14,,4/4,ADD1,NO,ETH,16,NO,ETH_0013,ethnic24.mid:13-14; duplicate of ETH_0013; RAW identical; not exported
+ethnic24.mid,15,16,,4/4,ADD1,NO,ETH,16,NO,ETH_0013,ethnic24.mid:15-16; duplicate of ETH_0013; RAW identical; not exported
+ethnic24.mid,17,17,,4/4,LEGACY,NO,ETH,16,NO,,ethnic24.mid:17; empty block (0 CH10 note-on); not exported
+ethnic28.mid,1,2,ETH_0014,4/4,ADD1,YES,ETH,16,NO,,ethnic28.mid:1-2
+ethnic28.mid,3,4,ETH_0015,4/4,ADD1,YES,ETH,16,NO,,ethnic28.mid:3-4
+ethnic28.mid,5,6,,4/4,ADD1,NO,ETH,16,NO,ETH_0014,ethnic28.mid:5-6; duplicate of ETH_0014; RAW identical; not exported
+ethnic28.mid,7,8,ETH_0016,4/4,ADD1,YES,ETH,16,NO,,ethnic28.mid:7-8
+ethnic28.mid,9,10,ETH_0017,4/4,ADD1,YES,ETH,16,NO,,ethnic28.mid:9-10
+ethnic28.mid,11,12,ETH_0018,4/4,ADD1,YES,ETH,16,NO,,ethnic28.mid:11-12
+ethnic28.mid,13,14,,4/4,ADD1,NO,ETH,16,NO,ETH_0017,ethnic28.mid:13-14; duplicate of ETH_0017; RAW identical; not exported
+ethnic28.mid,15,16,ETH_0019,4/4,ADD1,YES,ETH,16,NO,,ethnic28.mid:15-16
+folk1.mid,1,2,FOL_0001,4/4,LEGACY,YES,FOL,16,NO,,folk1.mid:1-2
+folk1.mid,3,4,,4/4,LEGACY,NO,FOL,16,NO,FOL_0001,folk1.mid:3-4; duplicate of FOL_0001; RAW identical; not exported
+folk1.mid,5,6,,4/4,LEGACY,NO,FOL,16,NO,FOL_0001,folk1.mid:5-6; duplicate of FOL_0001; RAW identical; not exported
+folk1.mid,7,8,FOL_0002,4/4,LEGACY,YES,FOL,16,NO,,folk1.mid:7-8
+folk1.mid,9,10,FOL_0003,4/4,LEGACY,YES,FOL,16,NO,,folk1.mid:9-10
+folk1.mid,11,12,,4/4,LEGACY,NO,FOL,16,NO,FOL_0002,folk1.mid:11-12; duplicate of FOL_0002; RAW identical; not exported
+folk1.mid,13,14,,4/4,LEGACY,NO,FOL,16,NO,FOL_0003,folk1.mid:13-14; duplicate of FOL_0003; RAW identical; not exported
+folk1.mid,15,16,,4/4,LEGACY,NO,FOL,16,NO,FOL_0001,folk1.mid:15-16; duplicate of FOL_0001; RAW identical; not exported
+folk5.mid,1,2,FOL_0004,4/4,LEGACY,YES,FOL,16,NO,,folk5.mid:1-2
+folk5.mid,3,4,,4/4,LEGACY,NO,FOL,16,NO,FOL_0004,folk5.mid:3-4; duplicate of FOL_0004; RAW identical; not exported
+folk5.mid,5,6,FOL_0005,4/4,LEGACY,YES,FOL,16T,NO,,folk5.mid:5-6
+folk5.mid,7,8,,4/4,LEGACY,NO,FOL,16T,NO,FOL_0005,folk5.mid:7-8; duplicate of FOL_0005; RAW identical; not exported
+folk5.mid,9,10,FOL_0006,4/4,LEGACY,YES,FOL,16,NO,,folk5.mid:9-10
+folk5.mid,11,12,,4/4,LEGACY,NO,FOL,16,NO,FOL_0006,folk5.mid:11-12; duplicate of FOL_0006; RAW identical; not exported
+folk5.mid,13,14,FOL_0007,4/4,LEGACY,YES,FOL,16,NO,,folk5.mid:13-14
+folk5.mid,15,16,,4/4,LEGACY,NO,FOL,16,NO,FOL_0007,folk5.mid:15-16; duplicate of FOL_0007; RAW identical; not exported
+folk13.mid,1,2,FOL_0008,4/4,LEGACY,YES,FOL,16,NO,,folk13.mid:1-2
+folk13.mid,3,4,,4/4,LEGACY,NO,FOL,16,NO,FOL_0008,folk13.mid:3-4; duplicate of FOL_0008; RAW identical; not exported
+folk13.mid,5,6,FOL_0009,4/4,LEGACY,YES,FOL,16,NO,,folk13.mid:5-6
+folk13.mid,7,8,,4/4,LEGACY,NO,FOL,16,NO,FOL_0009,folk13.mid:7-8; duplicate of FOL_0009; RAW identical; not exported
+folk13.mid,9,10,FOL_0010,4/4,LEGACY,YES,FOL,16,NO,,folk13.mid:9-10
+folk13.mid,11,12,,4/4,LEGACY,NO,FOL,16,NO,FOL_0010,folk13.mid:11-12; duplicate of FOL_0010; RAW identical; not exported
+folk13.mid,13,14,FOL_0011,4/4,LEGACY,YES,FOL,16,NO,,folk13.mid:13-14
+folk13.mid,15,16,,4/4,LEGACY,NO,FOL,16,NO,FOL_0011,folk13.mid:15-16; duplicate of FOL_0011; RAW identical; not exported
+folk18.mid,1,2,FOL_0012,4/4,LEGACY,YES,FOL,16,NO,,folk18.mid:1-2
+folk18.mid,3,4,,4/4,LEGACY,NO,FOL,16,NO,FOL_0012,folk18.mid:3-4; duplicate of FOL_0012; RAW identical; not exported
+folk18.mid,5,6,,4/4,LEGACY,NO,FOL,16,NO,FOL_0012,folk18.mid:5-6; duplicate of FOL_0012; RAW identical; not exported
+folk18.mid,7,8,FOL_0013,4/4,LEGACY,YES,FOL,16,NO,,folk18.mid:7-8
+folk18.mid,9,10,FOL_0014,4/4,LEGACY,YES,FOL,16,NO,,folk18.mid:9-10
+folk18.mid,11,12,FOL_0015,4/4,LEGACY,YES,FOL,16,NO,,folk18.mid:11-12
+folk18.mid,13,14,,4/4,LEGACY,NO,FOL,16,NO,FOL_0014,folk18.mid:13-14; duplicate of FOL_0014; RAW identical; not exported
+folk18.mid,15,16,,4/4,LEGACY,NO,FOL,16,NO,FOL_0015,folk18.mid:15-16; duplicate of FOL_0015; RAW identical; not exported
+folk30.mid,1,2,FOL_0016,4/4,LEGACY,YES,FOL,16,NO,,folk30.mid:1-2
+folk30.mid,3,4,,4/4,LEGACY,NO,FOL,16,NO,FOL_0016,folk30.mid:3-4; duplicate of FOL_0016; RAW identical; not exported
+folk30.mid,5,6,,4/4,LEGACY,NO,FOL,16,NO,FOL_0016,folk30.mid:5-6; duplicate of FOL_0016; RAW identical; not exported
+folk30.mid,7,8,,4/4,LEGACY,NO,FOL,16,NO,FOL_0016,folk30.mid:7-8; duplicate of FOL_0016; RAW identical; not exported
+folk30.mid,9,10,FOL_0017,4/4,LEGACY,YES,FOL,16,NO,,folk30.mid:9-10
+folk30.mid,11,12,,4/4,LEGACY,NO,FOL,16,NO,FOL_0017,folk30.mid:11-12; duplicate of FOL_0017; RAW identical; not exported
+folk30.mid,13,14,,4/4,LEGACY,NO,FOL,16,NO,FOL_0017,folk30.mid:13-14; duplicate of FOL_0017; RAW identical; not exported
+folk30.mid,15,16,,4/4,LEGACY,NO,FOL,16,NO,FOL_0017,folk30.mid:15-16; duplicate of FOL_0017; RAW identical; not exported
+folk33.mid,1,2,FOL_0018,4/4,LEGACY,YES,FOL,16,NO,,folk33.mid:1-2
+folk33.mid,3,4,,4/4,LEGACY,NO,FOL,16,NO,FOL_0018,folk33.mid:3-4; duplicate of FOL_0018; RAW identical; not exported
+folk33.mid,5,6,,4/4,LEGACY,NO,FOL,16,NO,FOL_0018,folk33.mid:5-6; duplicate of FOL_0018; RAW identical; not exported
+folk33.mid,7,8,,4/4,LEGACY,NO,FOL,16,NO,FOL_0018,folk33.mid:7-8; duplicate of FOL_0018; RAW identical; not exported
+folk33.mid,9,10,FOL_0019,4/4,LEGACY,YES,FOL,16,NO,,folk33.mid:9-10
+folk33.mid,11,12,,4/4,LEGACY,NO,FOL,16,NO,FOL_0019,folk33.mid:11-12; duplicate of FOL_0019; RAW identical; not exported
+folk33.mid,13,14,,4/4,LEGACY,NO,FOL,16,NO,FOL_0019,folk33.mid:13-14; duplicate of FOL_0019; RAW identical; not exported
+folk33.mid,15,16,,4/4,LEGACY,NO,FOL,16,NO,FOL_0019,folk33.mid:15-16; duplicate of FOL_0019; RAW identical; not exported
+folk34.mid,1,2,FOL_0020,4/4,LEGACY,YES,FOL,16,NO,,folk34.mid:1-2
+folk34.mid,3,4,,4/4,LEGACY,NO,FOL,16,NO,FOL_0020,folk34.mid:3-4; duplicate of FOL_0020; RAW identical; not exported
+folk34.mid,5,6,,4/4,LEGACY,NO,FOL,16,NO,FOL_0020,folk34.mid:5-6; duplicate of FOL_0020; RAW identical; not exported
+folk34.mid,7,8,,4/4,LEGACY,NO,FOL,16,NO,FOL_0020,folk34.mid:7-8; duplicate of FOL_0020; RAW identical; not exported
+folk34.mid,9,10,FOL_0021,4/4,LEGACY,YES,FOL,16,NO,,folk34.mid:9-10
+folk34.mid,11,12,,4/4,LEGACY,NO,FOL,16,NO,FOL_0021,folk34.mid:11-12; duplicate of FOL_0021; RAW identical; not exported
+folk34.mid,13,14,,4/4,LEGACY,NO,FOL,16,NO,FOL_0021,folk34.mid:13-14; duplicate of FOL_0021; RAW identical; not exported
+folk34.mid,15,16,,4/4,LEGACY,NO,FOL,16,NO,FOL_0021,folk34.mid:15-16; duplicate of FOL_0021; RAW identical; not exported
+folk38.mid,1,2,FOL_0022,4/4,LEGACY,YES,FOL,16,NO,,folk38.mid:1-2
+folk38.mid,3,4,,4/4,LEGACY,NO,FOL,16,NO,FOL_0022,folk38.mid:3-4; duplicate of FOL_0022; RAW identical; not exported
+folk38.mid,5,6,,4/4,LEGACY,NO,FOL,16,NO,FOL_0022,folk38.mid:5-6; duplicate of FOL_0022; RAW identical; not exported
+folk38.mid,7,8,FOL_0023,4/4,LEGACY,YES,FOL,16,NO,,folk38.mid:7-8
+folk38.mid,9,10,,4/4,LEGACY,NO,FOL,16,NO,FOL_0022,folk38.mid:9-10; duplicate of FOL_0022; RAW identical; not exported
+folk38.mid,11,12,,4/4,LEGACY,NO,FOL,16,NO,FOL_0022,folk38.mid:11-12; duplicate of FOL_0022; RAW identical; not exported
+folk38.mid,13,14,,4/4,LEGACY,NO,FOL,16,NO,FOL_0022,folk38.mid:13-14; duplicate of FOL_0022; RAW identical; not exported
+folk38.mid,15,16,FOL_0024,4/4,LEGACY,YES,FOL,16,NO,,folk38.mid:15-16
+folk42.mid,1,2,FOL_0025,4/4,LEGACY,YES,FOL,16,NO,,folk42.mid:1-2
+folk42.mid,3,4,FOL_0026,4/4,LEGACY,YES,FOL,16,NO,,folk42.mid:3-4
+folk42.mid,5,6,,4/4,LEGACY,NO,FOL,16,NO,FOL_0025,folk42.mid:5-6; duplicate of FOL_0025; RAW identical; not exported
+folk42.mid,7,8,,4/4,LEGACY,NO,FOL,16,NO,FOL_0026,folk42.mid:7-8; duplicate of FOL_0026; RAW identical; not exported
+folk42.mid,9,10,FOL_0027,4/4,LEGACY,YES,FOL,16,NO,,folk42.mid:9-10
+folk42.mid,11,12,FOL_0028,4/4,LEGACY,YES,FOL,16,NO,,folk42.mid:11-12
+folk42.mid,13,14,,4/4,LEGACY,NO,FOL,16,NO,FOL_0027,folk42.mid:13-14; duplicate of FOL_0027; RAW identical; not exported
+folk42.mid,15,16,,4/4,LEGACY,NO,FOL,16,NO,FOL_0028,folk42.mid:15-16; duplicate of FOL_0028; RAW identical; not exported
+folk42.mid,17,17,,4/4,LEGACY,NO,FOL,16,NO,,folk42.mid:17; empty block (0 CH10 note-on); not exported
+folk46.mid,1,2,FOL_0029,4/4,LEGACY,YES,FOL,16,NO,,folk46.mid:1-2
+folk46.mid,3,4,FOL_0030,4/4,LEGACY,YES,FOL,16,NO,,folk46.mid:3-4
+folk46.mid,5,6,,4/4,LEGACY,NO,FOL,16,NO,FOL_0029,folk46.mid:5-6; duplicate of FOL_0029; RAW identical; not exported
+folk46.mid,7,8,,4/4,LEGACY,NO,FOL,16,NO,FOL_0030,folk46.mid:7-8; duplicate of FOL_0030; RAW identical; not exported
+folk46.mid,9,10,FOL_0031,4/4,LEGACY,YES,FOL,16,NO,,folk46.mid:9-10
+folk46.mid,11,12,FOL_0032,4/4,LEGACY,YES,FOL,16,NO,,folk46.mid:11-12
+folk46.mid,13,14,,4/4,LEGACY,NO,FOL,16,NO,FOL_0031,folk46.mid:13-14; duplicate of FOL_0031; RAW identical; not exported
+folk46.mid,15,16,,4/4,LEGACY,NO,FOL,16,NO,FOL_0032,folk46.mid:15-16; duplicate of FOL_0032; RAW identical; not exported
+Jazz1.mid,1,2,JZZ_0010,4/4,LEGACY,YES,JZZ,8T,NO,,Jazz1.mid:1-2
+Jazz1.mid,3,4,,4/4,LEGACY,NO,JZZ,8T,NO,JZZ_0010,Jazz1.mid:3-4; duplicate of JZZ_0010; RAW identical; not exported
+Jazz1.mid,5,6,,4/4,LEGACY,NO,JZZ,8T,NO,JZZ_0010,Jazz1.mid:5-6; duplicate of JZZ_0010; RAW identical; not exported
+Jazz1.mid,7,8,JZZ_0011,4/4,LEGACY,YES,JZZ,8T,NO,,Jazz1.mid:7-8
+Jazz1.mid,9,10,JZZ_0012,4/4,LEGACY,YES,JZZ,8T,NO,,Jazz1.mid:9-10
+Jazz1.mid,11,12,JZZ_0013,4/4,LEGACY,YES,JZZ,8T,NO,,Jazz1.mid:11-12
+Jazz1.mid,13,14,,4/4,LEGACY,NO,JZZ,8T,NO,JZZ_0013,Jazz1.mid:13-14; duplicate of JZZ_0013; RAW identical; not exported
+Jazz1.mid,15,16,,4/4,LEGACY,NO,JZZ,8T,NO,JZZ_0013,Jazz1.mid:15-16; duplicate of JZZ_0013; RAW identical; not exported
+Jazz1.mid,17,17,,4/4,LEGACY,NO,JZZ,16,NO,,Jazz1.mid:17; empty block (0 CH10 note-on); not exported
+Jazz5.mid,1,2,JZZ_0014,4/4,LEGACY,YES,JZZ,8T,NO,,Jazz5.mid:1-2
+Jazz5.mid,3,4,,4/4,LEGACY,NO,JZZ,8T,NO,JZZ_0014,Jazz5.mid:3-4; duplicate of JZZ_0014; RAW identical; not exported
+Jazz5.mid,5,6,,4/4,LEGACY,NO,JZZ,8T,NO,JZZ_0014,Jazz5.mid:5-6; duplicate of JZZ_0014; RAW identical; not exported
+Jazz5.mid,7,8,JZZ_0015,4/4,LEGACY,YES,JZZ,8T,NO,,Jazz5.mid:7-8
+Jazz5.mid,9,10,JZZ_0016,4/4,LEGACY,YES,JZZ,8T,NO,,Jazz5.mid:9-10
+Jazz5.mid,11,12,,4/4,LEGACY,NO,JZZ,8T,NO,JZZ_0016,Jazz5.mid:11-12; duplicate of JZZ_0016; RAW identical; not exported
+Jazz5.mid,13,14,,4/4,LEGACY,NO,JZZ,8T,NO,JZZ_0016,Jazz5.mid:13-14; duplicate of JZZ_0016; RAW identical; not exported
+Jazz5.mid,15,16,,4/4,LEGACY,NO,JZZ,8T,NO,JZZ_0016,Jazz5.mid:15-16; duplicate of JZZ_0016; RAW identical; not exported
+Jazz5.mid,17,17,,4/4,LEGACY,NO,JZZ,16,NO,,Jazz5.mid:17; empty block (0 CH10 note-on); not exported
+Jazz12.mid,1,2,JZZ_0017,4/4,LEGACY,YES,JZZ,8T,NO,,Jazz12.mid:1-2
+Jazz12.mid,3,4,,4/4,LEGACY,NO,JZZ,8T,NO,JZZ_0017,Jazz12.mid:3-4; duplicate of JZZ_0017; RAW identical; not exported
+Jazz12.mid,5,6,,4/4,LEGACY,NO,JZZ,8T,NO,JZZ_0017,Jazz12.mid:5-6; duplicate of JZZ_0017; RAW identical; not exported
+Jazz12.mid,7,8,JZZ_0018,4/4,LEGACY,YES,JZZ,8T,NO,,Jazz12.mid:7-8
+Jazz12.mid,9,10,JZZ_0019,4/4,LEGACY,YES,JZZ,8T,NO,,Jazz12.mid:9-10
+Jazz12.mid,11,12,,4/4,LEGACY,NO,JZZ,8T,NO,JZZ_0019,Jazz12.mid:11-12; duplicate of JZZ_0019; RAW identical; not exported
+Jazz12.mid,13,14,,4/4,LEGACY,NO,JZZ,8T,NO,JZZ_0019,Jazz12.mid:13-14; duplicate of JZZ_0019; RAW identical; not exported
+Jazz12.mid,15,16,,4/4,LEGACY,NO,JZZ,8T,NO,JZZ_0019,Jazz12.mid:15-16; duplicate of JZZ_0019; RAW identical; not exported
+Jazz12.mid,17,17,,4/4,LEGACY,NO,JZZ,16,NO,,Jazz12.mid:17; empty block (0 CH10 note-on); not exported
+Latin2.mid,1,2,LAT_0022,4/4,RAP,YES,LAT,16,NO,,Latin2.mid:1-2
+Latin2.mid,3,4,LAT_0023,4/4,RAP,YES,LAT,16,NO,,Latin2.mid:3-4
+Latin2.mid,5,6,LAT_0024,4/4,RAP,YES,LAT,16,NO,,Latin2.mid:5-6
+Latin2.mid,7,8,LAT_0025,4/4,RAP,YES,LAT,16,NO,,Latin2.mid:7-8
+Latin2.mid,9,10,LAT_0026,4/4,ADD2,YES,LAT,16,NO,,Latin2.mid:9-10
+Latin2.mid,11,12,LAT_0027,4/4,ADD2,YES,LAT,16,NO,,Latin2.mid:11-12
+Latin2.mid,13,14,,4/4,ADD2,NO,LAT,16,NO,LAT_0027,Latin2.mid:13-14; duplicate of LAT_0027; RAW identical; not exported
+Latin2.mid,15,16,,4/4,ADD2,NO,LAT,16,NO,LAT_0027,Latin2.mid:15-16; duplicate of LAT_0027; RAW identical; not exported
+Latin6.mid,1,2,,4/4,LEGACY,NO,LAT,16,NO,,Latin6.mid:1-2; unsupported MIDI note(s) 82 for SLOT_MAP LEGACY; not exported
+Latin6.mid,3,4,,4/4,LEGACY,NO,LAT,16,NO,B001,Latin6.mid:3-4; unsupported MIDI note(s) 82 for SLOT_MAP LEGACY; not exported; duplicate of B001; RAW identical; not exported; reference block is itself not exportable
+Latin6.mid,5,6,,4/4,LEGACY,NO,LAT,16,NO,B001,Latin6.mid:5-6; unsupported MIDI note(s) 82 for SLOT_MAP LEGACY; not exported; duplicate of B001; RAW identical; not exported; reference block is itself not exportable
+Latin6.mid,7,8,,4/4,LEGACY,NO,LAT,16,NO,,Latin6.mid:7-8; unsupported MIDI note(s) 82 for SLOT_MAP LEGACY; not exported
+Latin6.mid,9,10,LAT_0028,4/4,LEGACY,YES,LAT,16,NO,,Latin6.mid:9-10
+Latin6.mid,11,12,LAT_0029,4/4,LEGACY,YES,LAT,16,NO,,Latin6.mid:11-12
+Latin6.mid,13,14,,4/4,LEGACY,NO,LAT,16,NO,LAT_0029,Latin6.mid:13-14; duplicate of LAT_0029; RAW identical; not exported
+Latin6.mid,15,16,,4/4,LEGACY,NO,LAT,16,NO,LAT_0029,Latin6.mid:15-16; duplicate of LAT_0029; RAW identical; not exported
+Latin6.mid,17,17,,4/4,LEGACY,NO,LAT,16,NO,,Latin6.mid:17; empty block (0 CH10 note-on); not exported
+Latin9.mid,1,2,LAT_0030,4/4,LEGACY,YES,LAT,16,NO,,Latin9.mid:1-2
+Latin9.mid,3,4,,4/4,LEGACY,NO,LAT,16,NO,LAT_0030,Latin9.mid:3-4; duplicate of LAT_0030; RAW identical; not exported
+Latin9.mid,5,6,,4/4,LEGACY,NO,LAT,16,NO,LAT_0030,Latin9.mid:5-6; duplicate of LAT_0030; RAW identical; not exported
+Latin9.mid,7,8,LAT_0031,4/4,LEGACY,YES,LAT,16,NO,,Latin9.mid:7-8
+Latin9.mid,9,10,LAT_0032,4/4,LEGACY,YES,LAT,16,NO,,Latin9.mid:9-10
+Latin9.mid,11,12,,4/4,LEGACY,NO,LAT,16,NO,LAT_0032,Latin9.mid:11-12; duplicate of LAT_0032; RAW identical; not exported
+Latin9.mid,13,14,,4/4,LEGACY,NO,LAT,16,NO,LAT_0032,Latin9.mid:13-14; duplicate of LAT_0032; RAW identical; not exported
+Latin9.mid,15,16,,4/4,LEGACY,NO,LAT,16,NO,LAT_0032,Latin9.mid:15-16; duplicate of LAT_0032; RAW identical; not exported
+Latin15.mid,1,2,LAT_0033,4/4,RAP,YES,LAT,16,NO,,Latin15.mid:1-2
+Latin15.mid,3,4,,4/4,RAP,NO,LAT,16,NO,LAT_0033,Latin15.mid:3-4; duplicate of LAT_0033; RAW identical; not exported
+Latin15.mid,5,6,,4/4,RAP,NO,LAT,16,NO,LAT_0033,Latin15.mid:5-6; duplicate of LAT_0033; RAW identical; not exported
+Latin15.mid,7,8,LAT_0034,4/4,RAP,YES,LAT,16,NO,,Latin15.mid:7-8
+Latin15.mid,9,10,LAT_0035,4/4,LEGACY,YES,LAT,16,NO,,Latin15.mid:9-10
+Latin15.mid,11,12,LAT_0036,4/4,LEGACY,YES,LAT,16,NO,,Latin15.mid:11-12
+Latin15.mid,13,14,,4/4,LEGACY,NO,LAT,16,NO,LAT_0036,Latin15.mid:13-14; duplicate of LAT_0036; RAW identical; not exported
+Latin15.mid,15,16,,4/4,LEGACY,NO,LAT,16,NO,LAT_0036,Latin15.mid:15-16; duplicate of LAT_0036; RAW identical; not exported
+Latin21.mid,1,2,LAT_0037,4/4,LEGACY,YES,LAT,16,NO,,Latin21.mid:1-2
+Latin21.mid,3,4,,4/4,LEGACY,NO,LAT,16,NO,LAT_0037,Latin21.mid:3-4; duplicate of LAT_0037; RAW identical; not exported
+Latin21.mid,5,6,,4/4,LEGACY,NO,LAT,16,NO,LAT_0037,Latin21.mid:5-6; duplicate of LAT_0037; RAW identical; not exported
+Latin21.mid,7,8,LAT_0038,4/4,LEGACY,YES,LAT,16,NO,,Latin21.mid:7-8
+Latin21.mid,9,10,LAT_0039,4/4,LEGACY,YES,LAT,16,NO,,Latin21.mid:9-10
+Latin21.mid,11,12,,4/4,LEGACY,NO,LAT,16,NO,LAT_0039,Latin21.mid:11-12; duplicate of LAT_0039; RAW identical; not exported
+Latin21.mid,13,14,,4/4,LEGACY,NO,LAT,16,NO,LAT_0039,Latin21.mid:13-14; duplicate of LAT_0039; RAW identical; not exported
+Latin21.mid,15,16,LAT_0040,4/4,LEGACY,YES,LAT,16,NO,,Latin21.mid:15-16
+Latin21.mid,17,17,,4/4,LEGACY,NO,LAT,16,NO,,Latin21.mid:17; empty block (0 CH10 note-on); not exported
+Latin24.mid,1,2,LAT_0041,4/4,LEGACY,YES,LAT,16,NO,,Latin24.mid:1-2
+Latin24.mid,3,4,,4/4,LEGACY,NO,LAT,16,NO,LAT_0041,Latin24.mid:3-4; duplicate of LAT_0041; RAW identical; not exported
+Latin24.mid,5,6,,4/4,LEGACY,NO,LAT,16,NO,LAT_0041,Latin24.mid:5-6; duplicate of LAT_0041; RAW identical; not exported
+Latin24.mid,7,8,LAT_0042,4/4,LEGACY,YES,LAT,16,NO,,Latin24.mid:7-8
+Latin24.mid,9,10,LAT_0043,4/4,ADD2,YES,LAT,16,NO,,Latin24.mid:9-10
+Latin24.mid,11,12,LAT_0044,4/4,ADD2,YES,LAT,16,NO,,Latin24.mid:11-12
+Latin24.mid,13,14,,4/4,ADD2,NO,LAT,16,NO,LAT_0044,Latin24.mid:13-14; duplicate of LAT_0044; RAW identical; not exported
+Latin24.mid,15,16,,4/4,ADD2,NO,LAT,16,NO,LAT_0044,Latin24.mid:15-16; duplicate of LAT_0044; RAW identical; not exported
+Latin29.mid,1,2,LAT_0045,4/4,ADD2,YES,LAT,16,NO,,Latin29.mid:1-2
+Latin29.mid,3,4,LAT_0046,4/4,ADD2,YES,LAT,16,NO,,Latin29.mid:3-4
+Latin29.mid,5,6,,4/4,ADD2,NO,LAT,16,NO,LAT_0045,Latin29.mid:5-6; duplicate of LAT_0045; RAW identical; not exported
+Latin29.mid,7,8,LAT_0047,4/4,ADD2,YES,LAT,16,NO,,Latin29.mid:7-8
+Latin29.mid,9,10,LAT_0048,4/4,ADD2,YES,LAT,16,NO,,Latin29.mid:9-10
+Latin29.mid,11,12,LAT_0049,4/4,ADD2,YES,LAT,16,NO,,Latin29.mid:11-12
+Latin29.mid,13,14,LAT_0050,4/4,ADD2,YES,LAT,16,NO,,Latin29.mid:13-14
+Latin29.mid,15,16,,4/4,ADD2,NO,LAT,16,NO,LAT_0049,Latin29.mid:15-16; duplicate of LAT_0049; RAW identical; not exported
+Latin34time1.mid,1,2,LTF_0001,3/4,ADD3,YES,LTF,16,NO,,Latin34time1.mid:1-2
+Latin34time1.mid,3,4,LTF_0002,3/4,ADD3,YES,LTF,16,NO,,Latin34time1.mid:3-4
+Latin34time1.mid,5,6,,3/4,ADD3,NO,LTF,16,NO,LTF_0001,Latin34time1.mid:5-6; duplicate of LTF_0001; RAW identical; not exported
+Latin34time1.mid,7,8,LTF_0003,3/4,ADD3,YES,LTF,16,NO,,Latin34time1.mid:7-8
+Latin34time1.mid,9,10,LTF_0004,3/4,LEGACY,YES,LTF,16,NO,,Latin34time1.mid:9-10
+Latin34time1.mid,11,12,LTF_0005,3/4,LEGACY,YES,LTF,16,NO,,Latin34time1.mid:11-12
+Latin34time1.mid,13,14,,3/4,LEGACY,NO,LTF,16,NO,LTF_0004,Latin34time1.mid:13-14; duplicate of LTF_0004; RAW identical; not exported
+Latin34time1.mid,15,16,,3/4,LEGACY,NO,LTF,16,NO,LTF_0005,Latin34time1.mid:15-16; duplicate of LTF_0005; RAW identical; not exported
+Latin39.mid,1,2,LAT_0051,4/4,ADD2,YES,LAT,16,NO,,Latin39.mid:1-2
+Latin39.mid,3,4,LAT_0052,4/4,ADD2,YES,LAT,16,NO,,Latin39.mid:3-4
+Latin39.mid,5,6,,4/4,ADD2,NO,LAT,16,NO,LAT_0051,Latin39.mid:5-6; duplicate of LAT_0051; RAW identical; not exported
+Latin39.mid,7,8,LAT_0053,4/4,ADD2,YES,LAT,32,NO,,Latin39.mid:7-8
+Latin39.mid,9,10,LAT_0054,4/4,ADD2,YES,LAT,16,NO,,Latin39.mid:9-10
+Latin39.mid,11,12,LAT_0055,4/4,ADD2,YES,LAT,16,NO,,Latin39.mid:11-12
+Latin39.mid,13,14,,4/4,ADD2,NO,LAT,16,NO,LAT_0055,Latin39.mid:13-14; duplicate of LAT_0055; RAW identical; not exported
+Latin39.mid,15,16,LAT_0056,4/4,ADD2,YES,LAT,16,NO,,Latin39.mid:15-16
+Latin68time1.mid,1,2,LSE_0001,6/8,LEGACY,YES,LSE,16,NO,,Latin68time1.mid:1-2
+Latin68time1.mid,3,4,,6/8,LEGACY,NO,LSE,16,NO,LSE_0001,Latin68time1.mid:3-4; duplicate of LSE_0001; RAW identical; not exported
+Latin68time1.mid,5,6,,6/8,LEGACY,NO,LSE,16,NO,LSE_0001,Latin68time1.mid:5-6; duplicate of LSE_0001; RAW identical; not exported
+Latin68time1.mid,7,8,LSE_0002,6/8,LEGACY,YES,LSE,16,NO,,Latin68time1.mid:7-8
+Latin68time1.mid,9,10,LSE_0003,6/8,LEGACY,YES,LSE,16,NO,,Latin68time1.mid:9-10
+Latin68time1.mid,11,12,,6/8,LEGACY,NO,LSE,16,NO,LSE_0003,Latin68time1.mid:11-12; duplicate of LSE_0003; RAW identical; not exported
+Latin68time1.mid,13,14,,6/8,LEGACY,NO,LSE,16,NO,LSE_0003,Latin68time1.mid:13-14; duplicate of LSE_0003; RAW identical; not exported
+Latin68time1.mid,15,16,,6/8,LEGACY,NO,LSE,16,NO,LSE_0003,Latin68time1.mid:15-16; duplicate of LSE_0003; RAW identical; not exported
+Rock3.mid,1,2,RCK_0040,4/4,LEGACY,YES,RCK,16,NO,,Rock3.mid:1-2
+Rock3.mid,3,4,RCK_0041,4/4,LEGACY,YES,RCK,16,NO,,Rock3.mid:3-4
+Rock3.mid,5,6,RCK_0042,4/4,LEGACY,YES,RCK,16,NO,,Rock3.mid:5-6
+Rock3.mid,7,8,RCK_0043,4/4,LEGACY,YES,RCK,16,NO,,Rock3.mid:7-8
+Rock3.mid,9,9,,4/4,LEGACY,NO,RCK,16,NO,,Rock3.mid:9; ending hit only; excluded from pattern catalog
+Rock7.mid,1,2,RCK_0044,4/4,LEGACY,YES,RCK,16,NO,,Rock7.mid:1-2
+Rock7.mid,3,4,RCK_0045,4/4,LEGACY,YES,RCK,16,NO,,Rock7.mid:3-4
+Rock7.mid,5,6,RCK_0046,4/4,LEGACY,YES,RCK,16,NO,,Rock7.mid:5-6
+Rock7.mid,7,8,RCK_0047,4/4,LEGACY,YES,RCK,16,NO,,Rock7.mid:7-8
+Rock7.mid,9,9,,4/4,LEGACY,NO,RCK,16,NO,,Rock7.mid:9; ending hit only; excluded from pattern catalog
+Rock13.mid,1,2,RCK_0048,4/4,LEGACY,YES,RCK,16,NO,,Rock13.mid:1-2
+Rock13.mid,3,4,RCK_0049,4/4,LEGACY,YES,RCK,16,NO,,Rock13.mid:3-4
+Rock13.mid,5,6,RCK_0050,4/4,LEGACY,YES,RCK,16,NO,,Rock13.mid:5-6
+Rock13.mid,7,8,RCK_0051,4/4,LEGACY,YES,RCK,16,NO,,Rock13.mid:7-8
+Rock13.mid,9,9,,4/4,LEGACY,NO,RCK,16,NO,,Rock13.mid:9; ending hit only; excluded from pattern catalog
+Rock16.mid,1,2,RCK_0052,4/4,LEGACY,YES,RCK,16,NO,,Rock16.mid:1-2
+Rock16.mid,3,4,RCK_0053,4/4,LEGACY,YES,RCK,16,NO,,Rock16.mid:3-4
+Rock16.mid,5,6,RCK_0054,4/4,LEGACY,YES,RCK,16,NO,,Rock16.mid:5-6
+Rock16.mid,7,8,RCK_0055,4/4,LEGACY,YES,RCK,16,NO,,Rock16.mid:7-8
+Rock16.mid,9,9,,4/4,LEGACY,NO,RCK,16,NO,,Rock16.mid:9; ending hit only; excluded from pattern catalog
+Rock20.mid,1,2,RCK_0056,4/4,LEGACY,YES,RCK,16,NO,,Rock20.mid:1-2
+Rock20.mid,3,4,RCK_0057,4/4,LEGACY,YES,RCK,16,NO,,Rock20.mid:3-4
+Rock20.mid,5,6,RCK_0058,4/4,LEGACY,YES,RCK,16,NO,,Rock20.mid:5-6
+Rock20.mid,7,8,RCK_0059,4/4,LEGACY,YES,RCK,16,NO,,Rock20.mid:7-8
+Rock20.mid,9,9,,4/4,LEGACY,NO,RCK,16,NO,,Rock20.mid:9; ending hit only; excluded from pattern catalog
+Rock26.mid,1,2,RCK_0060,4/4,LEGACY,YES,RCK,16,NO,,Rock26.mid:1-2
+Rock26.mid,3,4,RCK_0061,4/4,LEGACY,YES,RCK,16,NO,,Rock26.mid:3-4
+Rock26.mid,5,6,RCK_0062,4/4,LEGACY,YES,RCK,16,NO,,Rock26.mid:5-6
+Rock26.mid,7,8,RCK_0063,4/4,LEGACY,YES,RCK,16,NO,,Rock26.mid:7-8
+Rock26.mid,9,9,,4/4,LEGACY,NO,RCK,16,NO,,Rock26.mid:9; ending hit only; excluded from pattern catalog
+Rock30.mid,1,2,RCK_0064,4/4,LEGACY,YES,RCK,16,NO,,Rock30.mid:1-2
+Rock30.mid,3,4,RCK_0065,4/4,LEGACY,YES,RCK,16,NO,,Rock30.mid:3-4
+Rock30.mid,5,6,RCK_0066,4/4,LEGACY,YES,RCK,16,NO,,Rock30.mid:5-6
+Rock30.mid,7,8,RCK_0067,4/4,LEGACY,YES,RCK,16,NO,,Rock30.mid:7-8
+Rock30.mid,9,9,,4/4,LEGACY,NO,RCK,16,NO,,Rock30.mid:9; ending hit only; excluded from pattern catalog
+Rock33.mid,1,2,RCK_0068,4/4,LEGACY,YES,RCK,16,NO,,Rock33.mid:1-2
+Rock33.mid,3,4,RCK_0069,4/4,LEGACY,YES,RCK,16,NO,,Rock33.mid:3-4
+Rock33.mid,5,6,RCK_0070,4/4,LEGACY,YES,RCK,16,NO,,Rock33.mid:5-6
+Rock33.mid,7,8,RCK_0071,4/4,LEGACY,YES,RCK,16,NO,,Rock33.mid:7-8
+Rock33.mid,9,9,,4/4,LEGACY,NO,RCK,16,NO,,Rock33.mid:9; ending hit only; excluded from pattern catalog
+Rock42.mid,1,2,RCK_0072,4/4,LEGACY,YES,RCK,16,NO,,Rock42.mid:1-2
+Rock42.mid,3,4,RCK_0073,4/4,LEGACY,YES,RCK,16,NO,,Rock42.mid:3-4
+Rock42.mid,5,6,RCK_0074,4/4,LEGACY,YES,RCK,16,NO,,Rock42.mid:5-6
+Rock42.mid,7,8,RCK_0075,4/4,LEGACY,YES,RCK,16,NO,,Rock42.mid:7-8
+Rock42.mid,9,9,,4/4,LEGACY,NO,RCK,16,NO,,Rock42.mid:9; ending hit only; excluded from pattern catalog
+Rock49.mid,1,2,RCK_0076,4/4,LEGACY,YES,RCK,16,NO,,Rock49.mid:1-2
+Rock49.mid,3,4,RCK_0077,4/4,LEGACY,YES,RCK,16,NO,,Rock49.mid:3-4
+Rock49.mid,5,6,RCK_0078,4/4,LEGACY,YES,RCK,16,NO,,Rock49.mid:5-6
+Rock49.mid,7,8,RCK_0079,4/4,LEGACY,YES,RCK,16,NO,,Rock49.mid:7-8
+Rock49.mid,9,9,,4/4,LEGACY,NO,RCK,16,NO,,Rock49.mid:9; ending hit only; excluded from pattern catalog
