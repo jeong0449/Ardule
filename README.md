@@ -95,6 +95,14 @@ Together, these components provide a complete workflow from **performance MIDI**
 
 ---
 
+## Source MIDI Policy
+
+As a general policy, the **Ardule project does not redistribute original MIDI files used as source material**. Source MIDI files are used only for analysis and pattern extraction.
+
+Released collections contain derived drum-pattern representations produced through processes such as segmentation, slot-based abstraction, and, where necessary, data curation. Source and provenance information is documented for each collection whenever available.
+
+---
+
 ## Acknowledgements
 
 The reference patterns used in the development of **ADX Drum** are primarily based on collections of Standard MIDI drum files circulated through the music and MIDI community. The particular set used for this project was obtained from the Cakewalk forum:
