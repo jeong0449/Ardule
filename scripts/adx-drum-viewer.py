@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""adx-drum-viewer.py 260802a
+"""adx-drum-viewer.py 260816a
 
 Render six-level ADT/ADP patterns and optional same-basename ORN sidecars as one
 self-contained interactive HTML/SVG catalog.
@@ -37,7 +37,7 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 SCRIPT_NAME = "adx-drum-viewer.py"
-VERSION = "260810f"
+VERSION = "260816a"
 VERSION_TEXT = f"{SCRIPT_NAME} {VERSION}"
 ADT_VERSION_LINE = "; ADT v2.3"
 DEFAULT_SLOT_MAP = "LEGACY"
@@ -513,6 +513,30 @@ def parse_time_sig(value: Optional[str]) -> Optional[Tuple[int, int]]:
     return (n, d) if n > 0 and d > 0 else None
 
 
+def meter_grid(pattern: Pattern) -> Tuple[int, Optional[int], Optional[int]]:
+    """Return (primary_beat_steps, secondary_unit_steps, bar_steps).
+
+    Simple meters use the notated denominator unit as the primary beat.
+    Compound x/8 meters such as 6/8, 9/8, and 12/8 group three eighth
+    notes into one dotted-quarter primary beat; individual eighth-note
+    boundaries are retained as lighter secondary guides.
+    """
+    spq = STEPS_PER_QUARTER[pattern.subdiv]
+    ts = parse_time_sig(pattern.time_sig)
+    if not ts:
+        return spq, None, None
+    n, d = ts
+    unit_steps = spq * 4 / d
+    if unit_steps <= 0 or not math.isclose(unit_steps, round(unit_steps), abs_tol=1e-9):
+        return spq, None, None
+    unit_steps_i = int(round(unit_steps))
+    compound = d == 8 and n >= 6 and n % 3 == 0
+    primary = unit_steps_i * 3 if compound else unit_steps_i
+    secondary = unit_steps_i if compound else None
+    bar_steps = unit_steps_i * n
+    return primary, secondary, bar_steps
+
+
 def card_dimensions(pattern: Pattern) -> Tuple[int, int]:
     """Return a fixed compact card size for the A4 print grid."""
     return 345, 174
@@ -558,22 +582,24 @@ def render_card(pattern: Pattern, x: float, y: float, width: int, height: int,
     if pattern.time_sig: meta = f"{pattern.time_sig}, " + meta
     p += [svg_text(x + width / 2, y + 29, meta, "meta", "middle")]
 
-    major_every = STEPS_PER_QUARTER[pattern.subdiv]
+    primary_every, secondary_every, bar_steps = meter_grid(pattern)
     for step in range(pattern.length + 1):
-        xx = gx + step * cell_w; cls = "guide major" if step % major_every == 0 else "guide"
+        xx = gx + step * cell_w
+        if step % primary_every == 0:
+            cls = "guide major"
+        elif secondary_every and step % secondary_every == 0:
+            cls = "guide secondary"
+        else:
+            cls = "guide"
         p.append(f'<line x1="{xx:.2f}" y1="{gy}" x2="{xx:.2f}" y2="{gy + gh}" class="{cls}"/>')
-    ts = parse_time_sig(pattern.time_sig)
-    if ts:
-        n, d = ts; bar_steps = n * 4 * major_every / d
-        if bar_steps > 0 and math.isclose(bar_steps, round(bar_steps), abs_tol=1e-9):
-            every = int(round(bar_steps))
-            for step in range(0, pattern.length + 1, every):
-                xx = gx + step * cell_w
-                # Emphasize the center boundary of a two-bar pattern (bar 1 | bar 2).
-                # For longer even-length patterns, the same rule marks the pattern midpoint.
-                is_midbar = (0 < step < pattern.length and step * 2 == pattern.length)
-                line_class = "midbar" if is_midbar else "barline"
-                p.append(f'<line x1="{xx:.2f}" y1="{gy}" x2="{xx:.2f}" y2="{gy + gh}" class="{line_class}"/>')
+    if bar_steps:
+        for step in range(0, pattern.length + 1, bar_steps):
+            xx = gx + step * cell_w
+            # Emphasize the center boundary of a two-bar pattern (bar 1 | bar 2).
+            # For longer even-length patterns, the same rule marks the pattern midpoint.
+            is_midbar = (0 < step < pattern.length and step * 2 == pattern.length)
+            line_class = "midbar" if is_midbar else "barline"
+            p.append(f'<line x1="{xx:.2f}" y1="{gy}" x2="{xx:.2f}" y2="{gy + gh}" class="{line_class}"/>')
 
     # Reference-style outer frame: a light, even rectangle around the whole grid.
     # The center bar boundary remains the strongest visual divider.
@@ -771,7 +797,8 @@ body {{ font-family: Arial, Helvetica, sans-serif; }}
 .meta {{ fill: #333; font-size: 8px; }}
 .row {{ fill: #222; font-size: 7px; font-weight: 600; }}
 .guide, .rguide {{ stroke: #d8d8d8; stroke-width: .65; shape-rendering: crispEdges; }}
-.major {{ stroke: #9d9d9d; stroke-width: 1.1; }}
+.secondary {{ stroke: #bfbfbf; stroke-width: .8; }}
+.major {{ stroke: #8d8d8d; stroke-width: 1.2; }}
 .barline {{ stroke: #777; stroke-width: .9; opacity: .95; }}
 .midbar {{ stroke: #111; stroke-width: 2.4; opacity: .95; }}
 .gridframe {{ fill: none; stroke: #777; stroke-width: .9; shape-rendering: crispEdges; }}
