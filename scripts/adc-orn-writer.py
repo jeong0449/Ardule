@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""adc-orn-writer.py 260812a
+"""adc-orn-writer.py 260817b
 
-Create ORN v1.0 sidecar files from a reviewed ADC PatternLab CSV and the
-original, unsplit MIDI file. Supports both FLAM grace events and ordinary
+Create ORN v1.0 sidecar files from a reviewed ADC PatternLab CSV and one
+original MIDI file or a directory of original MIDI files. Supports both FLAM grace events and ordinary
 off-grid NOTE events that cannot be represented by the selected ADT grid.
 
 The CSV is the catalog authority. Only rows with EXPORT=YES and ORN=YES are
@@ -11,7 +11,7 @@ processed. START_BAR..END_BAR selects the pattern range in the original MIDI.
 Flam candidates are detected by adc_rhythm_analysis.py; adc_flam.py is not used.
 
 Default output:
-    PatternLab CSV + original MIDI -> ./NAME.ORN
+    PatternLab CSV + MIDI file/directory -> ./NAME.ORN
 
 ORN timing uses the ADX canonical PPQN=240 coordinate system. ORN does not
 store PPQN because it inherits the tick base of the matching ADP/ADT pattern.
@@ -33,7 +33,7 @@ from mido import Message, MetaMessage, MidiFile
 from adc_rhythm_analysis import ADT_DRUM_FAMILIES, detect_flams
 
 SCRIPT_NAME = "adc-orn-writer.py"
-VERSION = "260812a"
+VERSION = "260817b"
 VERSION_TEXT = f"{SCRIPT_NAME} {VERSION}"
 ORN_VERSION_LINE = "; ORN v1.0"
 CANONICAL_PPQN = 240
@@ -386,10 +386,20 @@ def render_orn(row: CatalogRow, length: int, loop_ticks: int, events: Sequence[O
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog=SCRIPT_NAME,
-        description="Create ORN sidecars from a PatternLab CSV and the original unsplit MIDI file.",
+        description=(
+            "Create ORN sidecars from a PatternLab CSV and either one original "
+            "MIDI file or a directory of original MIDI files."
+        ),
     )
     parser.add_argument("catalog_csv", type=Path, help="Reviewed PatternLab CSV")
-    parser.add_argument("source_midi", type=Path, help="Original unsplit MIDI file")
+    parser.add_argument(
+        "source",
+        type=Path,
+        help=(
+            "Original unsplit MIDI file, or a directory containing source "
+            "MIDI files named by the CSV FILE column"
+        ),
+    )
     parser.add_argument(
         "--out-dir",
         type=Path,
@@ -402,84 +412,247 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def build_midi_index(source_dir: Path) -> Dict[str, Path]:
+    """Index MIDI files directly under source_dir, case-insensitively."""
+    if not source_dir.is_dir():
+        fail(f"MIDI directory not found: {source_dir}")
+
+    index: Dict[str, Path] = {}
+    for path in sorted(source_dir.iterdir(), key=lambda p: p.name.casefold()):
+        if not path.is_file() or path.suffix.casefold() not in {".mid", ".midi"}:
+            continue
+        key = path.name.casefold()
+        if key in index:
+            fail(
+                f"ambiguous MIDI filename in directory: "
+                f"{index[key].name!r} and {path.name!r}"
+            )
+        index[key] = path
+    return index
+
+
+def prepare_midi(path: Path):
+    """Load one MIDI and return (mid, messages, bars)."""
+    try:
+        mid = MidiFile(str(path))
+    except Exception as exc:
+        fail(f"cannot read MIDI {path}: {exc}")
+    if mid.type not in (0, 1):
+        fail(f"{path.name}: only SMF Type 0 or 1 is supported, got Type {mid.type}")
+
+    messages = merged_absolute_messages(mid)
+    total_tick = max((tick for tick, _order, _msg in messages), default=0)
+    bars = build_bar_map(
+        mid.ticks_per_beat,
+        collect_time_signatures(messages),
+        total_tick,
+    )
+    return mid, messages, bars
+
+
+def process_rows_for_midi(
+    rows: Sequence[CatalogRow],
+    midi_path: Path,
+    out_dir: Path,
+    *,
+    overwrite: bool,
+    dry_run: bool,
+    planned_paths: set[Path],
+) -> Tuple[int, int]:
+    """Process selected catalog rows belonging to one MIDI file."""
+    mid, messages, bars = prepare_midi(midi_path)
+    expected_file = midi_path.name.casefold()
+
+    print(
+        f"[MIDI] {midi_path.name}: type {mid.type}, TPQ {mid.ticks_per_beat}, "
+        f"bars {len(bars)}, ORN rows {len(rows)}"
+    )
+
+    success = 0
+    failures = 0
+    for row in rows:
+        try:
+            if Path(row.file).name.casefold() != expected_file:
+                raise ValueError(
+                    f"FILE={row.file!r} does not match source MIDI {midi_path.name!r}"
+                )
+            if row.end_bar > len(bars):
+                raise ValueError(
+                    f"bar range {row.start_bar}-{row.end_bar} "
+                    f"exceeds MIDI bar count {len(bars)}"
+                )
+
+            meters = {
+                (bar.numerator, bar.denominator)
+                for bar in bars[row.start_bar - 1:row.end_bar]
+            }
+            expected_meter = parse_time_signature(
+                row.time_sig,
+                row_number=row.row_number,
+            )
+            if meters != {expected_meter}:
+                actual = "→".join(
+                    f"{bar.numerator}/{bar.denominator}"
+                    for bar in bars[row.start_bar - 1:row.end_bar]
+                )
+                raise ValueError(
+                    f"TIME_SIG={row.time_sig} does not match selected bars ({actual})"
+                )
+
+            length, loop_ticks, orn_events = build_orn_events(
+                row,
+                bars,
+                messages,
+                mid.ticks_per_beat,
+            )
+            output_path = out_dir / f"{row.name}.ORN"
+
+            if output_path in planned_paths:
+                raise ValueError(f"duplicate output NAME {row.name}")
+            planned_paths.add(output_path)
+
+            if not orn_events:
+                raise ValueError(
+                    "ORN=YES but no FLAM or off-grid NOTE event was found"
+                )
+            if output_path.exists() and not overwrite:
+                raise ValueError(f"exists: {output_path} (use --overwrite)")
+
+            if dry_run:
+                print(
+                    f"       [PLAN] {row.name}.ORN <- {midi_path.name} "
+                    f"bars {row.start_bar}-{row.end_bar}; "
+                    f"SUBDIV={row.subdiv}, LENGTH={length}, events={len(orn_events)}"
+                )
+            else:
+                out_dir.mkdir(parents=True, exist_ok=True)
+                output_path.write_text(
+                    render_orn(row, length, loop_ticks, orn_events),
+                    encoding="utf-8",
+                )
+                print(
+                    f"       [ORN] {output_path} <- {midi_path.name} "
+                    f"bars {row.start_bar}-{row.end_bar}; "
+                    f"SUBDIV={row.subdiv}, LENGTH={length}, events={len(orn_events)}"
+                )
+            success += 1
+
+        except (OSError, ValueError, SystemExit) as exc:
+            failures += 1
+            message = str(exc).removeprefix("[ERROR] ")
+            print(f"       [SKIP] CSV row {row.row_number} {row.name}: {message}")
+
+    return success, failures
+
+
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args = parse_args(argv)
     if not args.catalog_csv.is_file():
         fail(f"CSV not found: {args.catalog_csv}")
-    if not args.source_midi.is_file():
-        fail(f"MIDI not found: {args.source_midi}")
 
     rows = load_catalog(args.catalog_csv)
     selected = [row for row in rows if row.export and row.orn]
     if not selected:
         fail("CSV has no rows with EXPORT=YES and ORN=YES")
 
-    try:
-        mid = MidiFile(str(args.source_midi))
-    except Exception as exc:
-        fail(f"cannot read MIDI {args.source_midi}: {exc}")
-    if mid.type not in (0, 1):
-        fail(f"only SMF Type 0 or 1 is supported, got Type {mid.type}")
-
-    messages = merged_absolute_messages(mid)
-    total_tick = max((tick for tick, _order, _msg in messages), default=0)
-    bars = build_bar_map(mid.ticks_per_beat, collect_time_signatures(messages), total_tick)
-    expected_file = args.source_midi.name.casefold()
+    # Global output names must be unique across a combined CSV.
+    seen_names: Dict[str, int] = {}
+    for row in selected:
+        if not row.name:
+            fail(f"CSV row {row.row_number}: NAME is empty for EXPORT=YES, ORN=YES")
+        if row.name in seen_names:
+            fail(
+                f"CSV row {row.row_number}: duplicate NAME {row.name}; "
+                f"first seen at row {seen_names[row.name]}"
+            )
+        seen_names[row.name] = row.row_number
 
     print(VERSION_TEXT)
     print(f"[OK] CSV        : {args.catalog_csv}")
-    print(f"[OK] source MIDI: {args.source_midi}")
+    print(f"[OK] source     : {args.source}")
     print(f"[OK] output     : {args.out_dir}")
-    print(f"[OK] TPQ        : {mid.ticks_per_beat}")
-    print(f"[OK] bars       : {len(bars)}")
-    print(f"[OK] ORN rows   : {len(selected)}")
 
-    success = 0
-    failures = 0
     planned_paths: set[Path] = set()
-    for row in selected:
-        try:
-            if Path(row.file).name.casefold() != expected_file:
-                raise ValueError(f"FILE={row.file!r} does not match source MIDI {args.source_midi.name!r}")
-            if row.end_bar > len(bars):
-                raise ValueError(f"bar range {row.start_bar}-{row.end_bar} exceeds MIDI bar count {len(bars)}")
-            meters = {(bar.numerator, bar.denominator) for bar in bars[row.start_bar - 1:row.end_bar]}
-            expected_meter = parse_time_signature(row.time_sig, row_number=row.row_number)
-            if meters != {expected_meter}:
-                actual = "→".join(f"{bar.numerator}/{bar.denominator}" for bar in bars[row.start_bar - 1:row.end_bar])
-                raise ValueError(f"TIME_SIG={row.time_sig} does not match selected bars ({actual})")
+    total_success = 0
+    total_failures = 0
 
-            length, loop_ticks, orn_events = build_orn_events(row, bars, messages, mid.ticks_per_beat)
-            output_path = args.out_dir / f"{row.name}.ORN"
-            if output_path in planned_paths:
-                raise ValueError(f"duplicate output NAME {row.name}")
-            planned_paths.add(output_path)
-            if not orn_events:
-                raise ValueError("ORN=YES but no FLAM or off-grid NOTE event was found")
-            if output_path.exists() and not args.overwrite:
-                raise ValueError(f"exists: {output_path} (use --overwrite)")
+    if args.source.is_file():
+        # Single-file mode: process only rows whose FILE names this MIDI.
+        midi_key = args.source.name.casefold()
+        file_rows = [
+            row for row in selected
+            if Path(row.file).name.casefold() == midi_key
+        ]
+        if not file_rows:
+            fail(
+                f"CSV has no EXPORT=YES, ORN=YES rows for MIDI {args.source.name!r}"
+            )
 
-            if args.dry_run:
-                print(
-                    f"[PLAN] {row.name}.ORN <- bars {row.start_bar}-{row.end_bar}; "
-                    f"SUBDIV={row.subdiv}, LENGTH={length}, events={len(orn_events)}"
-                )
-            else:
-                args.out_dir.mkdir(parents=True, exist_ok=True)
-                output_path.write_text(render_orn(row, length, loop_ticks, orn_events), encoding="utf-8")
-                print(
-                    f"[ORN] {output_path} <- bars {row.start_bar}-{row.end_bar}; "
-                    f"SUBDIV={row.subdiv}, LENGTH={length}, events={len(orn_events)}"
-                )
-            success += 1
-        except (OSError, ValueError, SystemExit) as exc:
-            failures += 1
-            message = str(exc).removeprefix("[ERROR] ")
-            print(f"[SKIP] CSV row {row.row_number} {row.name}: {message}")
+        print(f"[OK] mode       : single MIDI")
+        print(f"[OK] ORN rows   : {len(file_rows)}")
+        success, failures = process_rows_for_midi(
+            file_rows,
+            args.source,
+            args.out_dir,
+            overwrite=args.overwrite,
+            dry_run=args.dry_run,
+            planned_paths=planned_paths,
+        )
+        total_success += success
+        total_failures += failures
+
+    elif args.source.is_dir():
+        # Directory mode: group selected rows by FILE and resolve only the MIDI
+        # files actually referenced by the CSV.
+        midi_index = build_midi_index(args.source)
+        grouped: Dict[str, List[CatalogRow]] = {}
+        display_names: Dict[str, str] = {}
+
+        for row in selected:
+            file_name = Path(row.file).name
+            if not file_name:
+                fail(f"CSV row {row.row_number}: FILE is empty")
+            key = file_name.casefold()
+            grouped.setdefault(key, []).append(row)
+            display_names.setdefault(key, file_name)
+
+        missing = [
+            display_names[key]
+            for key in grouped
+            if key not in midi_index
+        ]
+        if missing:
+            preview = ", ".join(missing[:5])
+            suffix = "" if len(missing) <= 5 else f" ... (+{len(missing)-5} more)"
+            fail(
+                f"MIDI file(s) referenced by CSV not found in source directory: "
+                f"{preview}{suffix}"
+            )
+
+        print(f"[OK] mode       : MIDI directory")
+        print(f"[OK] MIDI files : {len(grouped)}")
+        print(f"[OK] ORN rows   : {len(selected)}")
+
+        for key, file_rows in grouped.items():
+            success, failures = process_rows_for_midi(
+                file_rows,
+                midi_index[key],
+                args.out_dir,
+                overwrite=args.overwrite,
+                dry_run=args.dry_run,
+                planned_paths=planned_paths,
+            )
+            total_success += success
+            total_failures += failures
+    else:
+        fail(f"source is neither a MIDI file nor a directory: {args.source}")
 
     label = "DRY RUN" if args.dry_run else "DONE"
-    print(f"[{label}] created/planned={success}, skipped/errors={failures}")
-    return 0 if failures == 0 else 1
+    print(
+        f"[{label}] created/planned={total_success}, "
+        f"skipped/errors={total_failures}"
+    )
+    return 0 if total_failures == 0 else 1
 
 
 if __name__ == "__main__":
