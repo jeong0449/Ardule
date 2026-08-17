@@ -3,7 +3,8 @@
 **The ADX Platform for Drum Patternology**\
 **Format name:** Ardule Drum Text (ADT)\
 **Version:** 2.3 Final\
-**Status:** Final Public Specification
+**Status:** Final Public Specification\
+**Last Updated:** 2026-08-17
 
 > This document supersedes the draft ADT v2.3 specification and reflects
 > the finalized design adopted after large-scale PatternLab analysis.
@@ -22,10 +23,13 @@ The following normative changes are introduced:
     -   `^` Strong
     -   `@` Accent
 -   Accent symbols shall be obtained from `accent_levels.json`.
--   Resolution is determined by PatternLab.
+-   Resolution is determined by PatternLab using ornament-aware rhythm
+    analysis.
 -   The writer shall not recompute resolution.
--   Only ornament events outside the selected grid shall be stored in
-    ORN.
+-   Flam grace notes that alone require a finer grid may be excluded
+    from the rhythmic skeleton and preserved in ORN.
+-   Genuine fine-grid rhythmic material, including sustained runs or
+    rolls, shall retain the finer resolution.
 
 ------------------------------------------------------------------------
 
@@ -45,14 +49,30 @@ Supported values:
 ### Resolution Selection Rule
 
 The writer shall use the coarsest resolution capable of representing all
-required grid events.
+**musically significant rhythmic grid events**.
 
-Preference:
+Ornamental grace notes do not by themselves require a finer grid.
+PatternLab may identify such notes as flam ornaments, exclude them from
+subdivision determination, and preserve them in ORN.
 
--   16 over 32 whenever possible.
--   8T over 16T whenever possible.
+Preference within each rhythmic family:
 
-The writer records the resolution determined by PatternLab.
+-   16 over 32 whenever the straight rhythmic skeleton fits 16.
+-   8T over 16T whenever the triplet rhythmic skeleton fits 8T.
+
+Accordingly, ornament-induced refinement may collapse as follows:
+
+``` text
+straight: 32  -> 16 + FLAM in ORN
+triplet : 16T -> 8T + FLAM in ORN
+```
+
+This collapse shall not be applied to genuine fine-grid rhythmic
+material. Sustained same-family 32nd-note or 16T runs/rolls remain at
+`32` or `16T`, respectively.
+
+The writer records the resolution determined by PatternLab and shall not
+independently reinterpret the rhythmic structure.
 
 ------------------------------------------------------------------------
 
@@ -80,19 +100,31 @@ Reference writers shall obtain the output symbol directly from the JSON
 
 ## 6. Grid and ORN Separation
 
-PatternLab determines the grid resolution before ornament analysis.
+PatternLab determines grid resolution together with ornament analysis.
+The source MIDI timing is first examined at its actual NOTE ON
+positions, but the ADT grid represents the underlying rhythmic skeleton
+rather than every event position literally.
 
-After the resolution has been selected:
+When a finer subdivision is required only by a flam grace note, that
+grace note may be excluded from subdivision determination and stored in
+ORN. The main hit remains in the ADT grid.
 
--   Grid-aligned notes shall be written into ADT.
--   Only ornament events outside the selected grid shall be written into
-    ORN.
+Thus:
 
-A flam on a 16-step grid may therefore become a normal grid note on a
-32-step grid.
+-   Grid events belonging to the rhythmic skeleton shall be written into
+    ADT.
+-   Flam grace notes removed from subdivision analysis shall be written
+    into ORN.
+-   Genuine fine-grid rhythmic events shall remain in ADT and shall
+    determine the required finer `SUBDIV`.
 
-ORN preserves only timing information that remains outside the chosen
-grid.
+A source MIDI event located on a straight-32 position may therefore be
+stored as a FLAM ornament while the matching ADT uses `SUBDIV=16`.
+Likewise, a triplet-16T-position grace event may be stored as a FLAM
+ornament while the ADT uses `SUBDIV=8T`.
+
+ORN therefore preserves musically meaningful ornament timing without
+forcing unnecessary subdivision refinement.
 
 ------------------------------------------------------------------------
 
@@ -108,17 +140,31 @@ A conforming ADT v2.3 Final file shall satisfy:
     -   `o`
     -   `^`
     -   `@`
--   Grid-representable notes shall not appear in ORN.
--   ORN contains only events outside the selected grid.
+-   Rhythmic-skeleton notes represented by the selected grid shall not
+    be duplicated in ORN.
+-   Flam grace notes intentionally excluded from subdivision analysis
+    may appear in ORN even when their source MIDI positions would fit a
+    finer supported grid.
+-   Genuine fine-grid rhythmic events shall not be reclassified as
+    ornaments merely to obtain a coarser grid.
 
 ------------------------------------------------------------------------
 
 ## Appendix A --- Resolution Policy
 
-The ADX Platform adopts the **Coarsest Valid Grid** principle.
+The ADX Platform adopts the **Coarsest Musically Valid Grid** principle.
 
-Patterns shall be represented using the simplest grid that preserves all
-musically significant events.
+Patterns shall be represented using the simplest grid that preserves the
+underlying rhythmic structure. Ornament timing is preserved separately
+in ORN when it should not determine the rhythmic grid.
 
-This improves readability, interoperability, and minimizes unnecessary
-ORN data.
+Resolution therefore describes **rhythmic structure, not incidental
+event density**.
+
+Within the straight family, ornament-only 32nd-note refinement may
+collapse to `16 + ORN`. Within the triplet family, ornament-only 16T
+refinement may collapse to `8T + ORN`. Genuine sustained fine-grid runs
+or rolls are protected and retain their finer subdivision.
+
+This improves readability and interoperability while preserving
+musically significant ornament timing.
