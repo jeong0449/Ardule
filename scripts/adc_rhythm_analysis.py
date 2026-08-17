@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""adc_rhythm_analysis.py 260817c
+"""adc_rhythm_analysis.py 260817d
 
 Shared grace/flam/ghost and straight-16/straight-32/8T/16T subdivision analysis for ADC Toolkit.
 Isolated exact-32nd grace→main pairs may be treated as flam ornaments even when velocities are equal; sustained same-family 32nd runs are preserved.
@@ -20,7 +20,7 @@ from typing import Any, Iterable
 from mido import Message, MidiFile
 
 SCRIPT_NAME = "adc_rhythm_analysis.py"
-VERSION = "260817c"
+VERSION = "260817d"
 VERSION_TEXT = f"{SCRIPT_NAME} {VERSION}"
 SUPPORTED_RESOLUTIONS = ("16", "32", "8T", "16T")
 
@@ -36,6 +36,7 @@ GHOST_FAMILIES = {"SN", "SS", "LT", "MT", "HT", "CL"}
 # Short isolated weak->strong pairs are treated as ornament/flam candidates
 # even when both notes happen to land exactly on the 32nd-note grid.
 STRAIGHT32_RUN_MIN_HITS = 4
+TRIPLET16_RUN_MIN_HITS = 4
 
 
 def _get(event: Any, name: str, default=None):
@@ -422,56 +423,64 @@ def _is_straight32_exclusive_tick(tick: int, tpq: int, origin: int = 0) -> bool:
     return index % 2 == 1 and _tick_aligned_to_resolution(tick, tpq, "32", origin)
 
 
+def _is_triplet16_exclusive_tick(tick: int, tpq: int, origin: int = 0) -> bool:
+    """Return True for a triplet-16T position not representable by triplet-8T."""
+    if tpq <= 0:
+        return False
+    phase = (int(tick) - int(origin)) % tpq
+    step16t = tpq / 6
+    index = int(round(phase / step16t)) % 6
+    return index % 2 == 1 and _tick_aligned_to_resolution(tick, tpq, "16T", origin)
+
+
 def analyze_event_rhythm(events: Iterable[Any], tpq: int, filename: str = "",
                          loop_ticks: int | None = None, loop_start: int | None = None) -> dict:
-    """Analyze resolution first, then remove only genuinely off-grid flam grace notes.
+    """Analyze subdivision, remove fine-grid flam grace notes, then re-evaluate.
 
-    A flam-like weak/strong pair may be ordinary pattern data when both onsets
-    occupy the regular straight-32 grid.  The former order removed the weak
-    onset before resolution analysis and therefore hid exactly this evidence.
+    straight: 32 -> 16 + ORN when fine-grid evidence is ornament-only
+    triplet : 16T -> 8T + ORN when fine-grid evidence is ornament-only
     """
     events = list(events)
-
-    # Pass 1: evaluate the untouched event stream so exact odd 1/8-beat onsets
-    # can provide legitimate straight-32 evidence.
     raw_ticks = [int(_get(event, "tick", 0)) for event in events]
     raw_base = classify_subdivision(tpq, raw_ticks)
     provisional = combine_subdivision_evidence(raw_base, events, tpq, filename)
     provisional_resolution = provisional.get("resolution", "unknown")
 
-    # Pass 2: protect flam-like pairs that are genuine straight-32 grid notes.
     flam_analysis = detect_flams(
-        events,
-        tpq,
-        loop_ticks=loop_ticks,
-        loop_start=loop_start,
+        events, tpq, loop_ticks=loop_ticks, loop_start=loop_start,
         selected_resolution=provisional_resolution,
     )
     grace_indices = {
         item["grace_index"] for item in flam_analysis["flams"]
         if item.get("remove_from_subdivision")
     }
-
-    rhythmic_events = [event for index, event in enumerate(events) if index not in grace_indices]
+    rhythmic_events = [event for i, event in enumerate(events) if i not in grace_indices]
     note_ticks = [int(_get(event, "tick", 0)) for event in rhythmic_events]
     base = classify_subdivision(tpq, note_ticks)
     subdivision = combine_subdivision_evidence(base, rhythmic_events, tpq, filename)
 
-    # If straight-32 was required only by removable flam grace notes, prefer
-    # the coarser straight-16 skeleton once those ornaments are excluded.
-    # This also resolves the common all-quarter/all-eighth ambiguity after the
-    # only odd 32nd phase has disappeared.  Genuine 32nd runs are protected
-    # above and therefore leave 32nd evidence in rhythmic_events.
     flam32_to_16 = False
+    flam16t_to_8t = False
+
     if grace_indices and provisional_resolution == "32" and subdivision.get("resolution") != "32":
         s16_fit = float(subdivision.get("grid_fit", {}).get("straight-16", {}).get("aligned_ratio", 0.0))
         if s16_fit >= 0.999999:
-            subdivision["grid"] = "straight"
-            subdivision["resolution"] = "16"
-            subdivision["subdivision"] = "straight-16"
-            subdivision["rhythmic_feel"] = "straight"
+            subdivision.update(grid="straight", resolution="16",
+                               subdivision="straight-16", rhythmic_feel="straight")
             flam32_to_16 = True
+
+    if grace_indices and provisional_resolution == "16T" and subdivision.get("resolution") != "16T":
+        t8_fit = float(subdivision.get("grid_fit", {}).get("triplet-8T", {}).get("aligned_ratio", 0.0))
+        if t8_fit >= 0.999999:
+            subdivision.update(grid="triplet", resolution="8T",
+                               subdivision="triplet-8T", rhythmic_feel="shuffle/swing")
+            flam16t_to_8t = True
+
     subdivision["flam32_to_16_override"] = flam32_to_16
+    subdivision["flam16t_to_8t_override"] = flam16t_to_8t
+    subdivision["fine_grid_flam_collapse"] = (
+        "32->16" if flam32_to_16 else "16T->8T" if flam16t_to_8t else None
+    )
     subdivision["excluded_flam_grace_count"] = len(grace_indices)
     subdivision["provisional_resolution"] = provisional_resolution
     subdivision["grid_preserved_flam_count"] = sum(
@@ -706,6 +715,40 @@ def _straight32_run_lengths(seq: list[dict], tpq: int, origin: int = 0,
     return out
 
 
+def _triplet16_run_lengths(seq: list[dict], tpq: int, origin: int = 0,
+                           loop_ticks: int | None = None) -> dict[int, int]:
+    """Return genuine same-family triplet-16T run lengths."""
+    if tpq <= 0 or not seq:
+        return {}
+    step = tpq / 6.0
+    tol = max(1.0, step * 0.05)
+    ordered = sorted(seq, key=lambda e: (e["tick"], e["source_index"]))
+    groups, current = [], [0]
+    for i in range(len(ordered) - 1):
+        gap = ordered[i + 1]["tick"] - ordered[i]["tick"]
+        linked = (
+            abs(gap - step) <= tol
+            and _tick_aligned_to_resolution(ordered[i]["tick"], tpq, "16T", origin)
+            and _tick_aligned_to_resolution(ordered[i + 1]["tick"], tpq, "16T", origin)
+        )
+        if linked:
+            current.append(i + 1)
+        else:
+            groups.append(current); current = [i + 1]
+    groups.append(current)
+
+    out = {}
+    for group in groups:
+        if len(group) < TRIPLET16_RUN_MIN_HITS:
+            continue
+        ticks = [ordered[i]["tick"] for i in group]
+        if not any(_is_triplet16_exclusive_tick(t, tpq, origin) for t in ticks):
+            continue
+        for i in group:
+            out[ordered[i]["source_index"]] = len(group)
+    return out
+
+
 def detect_flams(events: Iterable[Any], tpq: int, loop_ticks: int | None = None,
                  loop_start: int | None = None,
                  selected_resolution: str | None = None) -> dict:
@@ -729,7 +772,7 @@ def detect_flams(events: Iterable[Any], tpq: int, loop_ticks: int | None = None,
             "track": int(_get(event, "track", 0)),
             "source_index": index,
         })
-    max_gap = max(2, int(round(tpq / 8)))
+    max_gap = max(2, int(round(tpq / 6))) if selected_resolution == "16T" else max(2, int(round(tpq / 8)))
     high_gap = max(2, int(round(tpq / 12)))
     by_family: dict[str, list[dict]] = defaultdict(list)
     for event in normalized:
@@ -743,6 +786,9 @@ def detect_flams(events: Iterable[Any], tpq: int, loop_ticks: int | None = None,
             continue
         seq = sorted(group, key=lambda e: (e["tick"], e["source_index"]))
         run_lengths = _straight32_run_lengths(
+            seq, tpq, int(loop_start or 0), loop_ticks=loop_ticks
+        )
+        triplet_run_lengths = _triplet16_run_lengths(
             seq, tpq, int(loop_start or 0), loop_ticks=loop_ticks
         )
         i = 0
@@ -768,7 +814,14 @@ def detect_flams(events: Iterable[Any], tpq: int, loop_ticks: int | None = None,
                 run_lengths.get(first["source_index"], 0),
                 run_lengths.get(second["source_index"], 0),
             )
-            grid_preserved = selected_resolution == "32" and run_length >= STRAIGHT32_RUN_MIN_HITS
+            triplet_run_length = min(
+                triplet_run_lengths.get(first["source_index"], 0),
+                triplet_run_lengths.get(second["source_index"], 0),
+            )
+            grid_preserved = (
+                (selected_resolution == "32" and run_length >= STRAIGHT32_RUN_MIN_HITS)
+                or (selected_resolution == "16T" and triplet_run_length >= TRIPLET16_RUN_MIN_HITS)
+            )
             if grid_preserved:
                 removable = False
             item = {
@@ -782,6 +835,7 @@ def detect_flams(events: Iterable[Any], tpq: int, loop_ticks: int | None = None,
                 "remove_from_subdivision": removable,
                 "grid_preserved": grid_preserved,
                 "straight32_run_length": run_length,
+                "triplet16_run_length": triplet_run_length,
                 "grace_key": (first["tick"], first["note"], first["track"]),
             }
             flams.append(item)
@@ -812,7 +866,14 @@ def detect_flams(events: Iterable[Any], tpq: int, loop_ticks: int | None = None,
                     run_lengths.get(last["source_index"], 0),
                     run_lengths.get(first["source_index"], 0),
                 )
-                grid_preserved = selected_resolution == "32" and run_length >= STRAIGHT32_RUN_MIN_HITS
+                triplet_run_length = min(
+                    triplet_run_lengths.get(last["source_index"], 0),
+                    triplet_run_lengths.get(first["source_index"], 0),
+                )
+                grid_preserved = (
+                    (selected_resolution == "32" and run_length >= STRAIGHT32_RUN_MIN_HITS)
+                    or (selected_resolution == "16T" and triplet_run_length >= TRIPLET16_RUN_MIN_HITS)
+                )
                 if grid_preserved:
                     removable = False
                 item = {
@@ -827,6 +888,7 @@ def detect_flams(events: Iterable[Any], tpq: int, loop_ticks: int | None = None,
                     "remove_from_subdivision": removable, "across_loop": True,
                     "grid_preserved": grid_preserved,
                     "straight32_run_length": run_length,
+                    "triplet16_run_length": triplet_run_length,
                     "grace_key": (last["tick"], last["note"], last["track"]),
                 }
                 flams.append(item)
@@ -842,6 +904,7 @@ def detect_flams(events: Iterable[Any], tpq: int, loop_ticks: int | None = None,
             "flam_max_gap_ticks": max_gap,
             "flam_high_gap_ticks": high_gap,
             "straight32_run_min_hits": STRAIGHT32_RUN_MIN_HITS,
+            "triplet16_run_min_hits": TRIPLET16_RUN_MIN_HITS,
         },
     }
 
