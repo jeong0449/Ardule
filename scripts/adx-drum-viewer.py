@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""adx-drum-viewer.py 260816a
+"""adx-drum-viewer.py 260817c
 
 Render six-level ADT/ADP patterns and optional same-basename ORN sidecars as one
 self-contained interactive HTML/SVG catalog.
@@ -37,7 +37,7 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 SCRIPT_NAME = "adx-drum-viewer.py"
-VERSION = "260816a"
+VERSION = "260817c"
 VERSION_TEXT = f"{SCRIPT_NAME} {VERSION}"
 ADT_VERSION_LINE = "; ADT v2.3"
 DEFAULT_SLOT_MAP = "LEGACY"
@@ -647,14 +647,27 @@ def render_card(pattern: Pattern, x: float, y: float, width: int, height: int,
         yy = gy + display_row[slot_index_] * row_h
         xx = gx + step_index * cell_w
         square = max(4., min(8., cell_w * .25, row_h * .35))
+
+        # The main-hit rectangle begins at (xx + .6, yy + .6).
+        # Place the FLAM marker inside the main hit so that the small marker's
+        # upper-left corner exactly coincides with the main hit's upper-left corner.
+        main_x = xx + .6
+        main_y = yy + .6
+
         for event_index, e in enumerate(events):
             detail = (f"{e.kind} offset {e.offset_ticks} ticks, velocity {e.velocity}"
                       + (" loop-wrap" if e.loop_wrap else "")
                       + (f", confidence {e.confidence}" if e.confidence else ""))
+
+            # Multiple grace events, if present, are inset slightly down-right;
+            # the first FLAM marker is exactly corner-aligned with the main hit.
             dx = 1.5 * event_index
             dy = 1.2 * event_index
+            flam_x = main_x + dx
+            flam_y = main_y + dy
+
             p.append(
-                f'<rect x="{xx + 2.2 + dx:.2f}" y="{yy + 2.2 + dy:.2f}" '
+                f'<rect x="{flam_x:.2f}" y="{flam_y:.2f}" '
                 f'width="{square:.2f}" height="{square:.2f}" rx=".7" class="ornmark">'
                 f'<title>{esc(detail)}</title></rect>'
             )
