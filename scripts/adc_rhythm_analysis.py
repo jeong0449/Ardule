@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""adc_rhythm_analysis.py 260804c
+"""adc_rhythm_analysis.py 260817c
 
 Shared grace/flam/ghost and straight-16/straight-32/8T/16T subdivision analysis for ADC Toolkit.
+Isolated exact-32nd grace→main pairs may be treated as flam ornaments even when velocities are equal; sustained same-family 32nd runs are preserved.
 Used by adc-patternlab.py and adc-mid2report.py.
 
 The module analyzes MIDI data only; it does not render output or modify MIDI files.
@@ -19,7 +20,7 @@ from typing import Any, Iterable
 from mido import Message, MidiFile
 
 SCRIPT_NAME = "adc_rhythm_analysis.py"
-VERSION = "260807a"
+VERSION = "260817c"
 VERSION_TEXT = f"{SCRIPT_NAME} {VERSION}"
 SUPPORTED_RESOLUTIONS = ("16", "32", "8T", "16T")
 
@@ -30,6 +31,11 @@ ADT_DRUM_FAMILIES = {
     51: "RD", 53: "RD", 59: "RD",
 }
 GHOST_FAMILIES = {"SN", "SS", "LT", "MT", "HT", "CL"}
+
+# A genuine straight-32 run needs several consecutive same-family hits.
+# Short isolated weak->strong pairs are treated as ornament/flam candidates
+# even when both notes happen to land exactly on the 32nd-note grid.
+STRAIGHT32_RUN_MIN_HITS = 4
 
 
 def _get(event: Any, name: str, default=None):
@@ -450,6 +456,22 @@ def analyze_event_rhythm(events: Iterable[Any], tpq: int, filename: str = "",
     note_ticks = [int(_get(event, "tick", 0)) for event in rhythmic_events]
     base = classify_subdivision(tpq, note_ticks)
     subdivision = combine_subdivision_evidence(base, rhythmic_events, tpq, filename)
+
+    # If straight-32 was required only by removable flam grace notes, prefer
+    # the coarser straight-16 skeleton once those ornaments are excluded.
+    # This also resolves the common all-quarter/all-eighth ambiguity after the
+    # only odd 32nd phase has disappeared.  Genuine 32nd runs are protected
+    # above and therefore leave 32nd evidence in rhythmic_events.
+    flam32_to_16 = False
+    if grace_indices and provisional_resolution == "32" and subdivision.get("resolution") != "32":
+        s16_fit = float(subdivision.get("grid_fit", {}).get("straight-16", {}).get("aligned_ratio", 0.0))
+        if s16_fit >= 0.999999:
+            subdivision["grid"] = "straight"
+            subdivision["resolution"] = "16"
+            subdivision["subdivision"] = "straight-16"
+            subdivision["rhythmic_feel"] = "straight"
+            flam32_to_16 = True
+    subdivision["flam32_to_16_override"] = flam32_to_16
     subdivision["excluded_flam_grace_count"] = len(grace_indices)
     subdivision["provisional_resolution"] = provisional_resolution
     subdivision["grid_preserved_flam_count"] = sum(
@@ -617,14 +639,84 @@ def collect_drum_note_events(mid: MidiFile) -> list[dict]:
     return out
 
 
+def _straight32_run_lengths(seq: list[dict], tpq: int, origin: int = 0,
+                            loop_ticks: int | None = None) -> dict[int, int]:
+    """Return straight-32 run length for each event source index.
+
+    A run is a sequence of same-family hits separated by one straight-32 step.
+    Only runs containing at least one odd 32nd phase (therefore genuinely
+    requiring 32 rather than 16) are reported.  Circular loop continuity is
+    recognized when loop_ticks is supplied.
+    """
+    if tpq <= 0 or not seq:
+        return {}
+    step = tpq / 8.0
+    tol = max(1.0, step * 0.05)
+    ordered = sorted(seq, key=lambda e: (e["tick"], e["source_index"]))
+    n = len(ordered)
+    if n < 2:
+        return {}
+
+    linked = [False] * n
+    for i in range(n - 1):
+        gap = ordered[i + 1]["tick"] - ordered[i]["tick"]
+        linked[i] = (
+            abs(gap - step) <= tol
+            and _tick_aligned_to_resolution(ordered[i]["tick"], tpq, "32", origin)
+            and _tick_aligned_to_resolution(ordered[i + 1]["tick"], tpq, "32", origin)
+        )
+
+    wrap_link = False
+    if loop_ticks and loop_ticks > 0 and n >= 2:
+        first_wrapped = ordered[0]["tick"]
+        while first_wrapped < origin:
+            first_wrapped += loop_ticks
+        first_wrapped += loop_ticks
+        gap = first_wrapped - ordered[-1]["tick"]
+        wrap_link = (
+            abs(gap - step) <= tol
+            and _tick_aligned_to_resolution(ordered[-1]["tick"], tpq, "32", origin)
+            and _tick_aligned_to_resolution(first_wrapped, tpq, "32", origin)
+        )
+
+    # Build connected components on a line, then merge first/last when the loop wraps.
+    groups: list[list[int]] = []
+    current = [0]
+    for i in range(n - 1):
+        if linked[i]:
+            current.append(i + 1)
+        else:
+            groups.append(current)
+            current = [i + 1]
+    groups.append(current)
+    if wrap_link and len(groups) > 1:
+        groups[0] = groups[-1] + groups[0]
+        groups.pop()
+
+    out: dict[int, int] = {}
+    for group in groups:
+        if len(group) < STRAIGHT32_RUN_MIN_HITS:
+            continue
+        ticks = [ordered[i]["tick"] for i in group]
+        requires_32 = any(_is_straight32_exclusive_tick(t, tpq, origin) for t in ticks)
+        if not requires_32:
+            continue
+        for i in group:
+            out[ordered[i]["source_index"]] = len(group)
+    return out
+
+
 def detect_flams(events: Iterable[Any], tpq: int, loop_ticks: int | None = None,
                  loop_start: int | None = None,
                  selected_resolution: str | None = None) -> dict:
     """Detect conservative grace/main flam candidates by ADT drum family.
 
-    With selected_resolution="32", a weak/strong pair is retained as regular
-    pattern data when both onsets align to straight-32 and the weak onset uses
-    an odd 32nd-note position unavailable to straight-16.
+    With selected_resolution="32", an isolated grace/main pair is still a
+    flam candidate even when it lands exactly on the 32nd-note grid. Equal
+    grace/main velocity is allowed because source MIDI may encode notated flams
+    without a velocity contrast. The pair
+    is preserved as genuine 32nd-note pattern data only when it belongs to a
+    sustained same-family straight-32 run (default: at least four hits).
     """
     normalized = []
     for index, event in enumerate(events):
@@ -650,28 +742,33 @@ def detect_flams(events: Iterable[Any], tpq: int, loop_ticks: int | None = None,
         if family.startswith("N"):
             continue
         seq = sorted(group, key=lambda e: (e["tick"], e["source_index"]))
+        run_lengths = _straight32_run_lengths(
+            seq, tpq, int(loop_start or 0), loop_ticks=loop_ticks
+        )
         i = 0
         while i + 1 < len(seq):
             first, second = seq[i], seq[i + 1]
             gap = second["tick"] - first["tick"]
-            if gap <= 0 or gap > max_gap or first["velocity"] >= second["velocity"]:
+            if gap <= 0 or gap > max_gap or first["velocity"] > second["velocity"]:
                 i += 1
                 continue
             third_close = i + 2 < len(seq) and 0 < seq[i + 2]["tick"] - second["tick"] <= max_gap
             ratio = first["velocity"] / max(1, second["velocity"])
+            equal_velocity = first["velocity"] == second["velocity"]
             if gap <= high_gap and ratio <= 0.75 and not third_close:
                 confidence = "HIGH"
-            elif ratio <= 0.90 and not third_close:
+            elif not third_close and (ratio <= 0.90 or equal_velocity):
+                # Equal-velocity isolated pairs are valid flam candidates.
+                # Some source MIDI encodes a notated flam without velocity contrast.
                 confidence = "MEDIUM"
             else:
                 confidence = "LOW"
             removable = confidence in {"HIGH", "MEDIUM"} and not third_close
-            grid_preserved = (
-                selected_resolution == "32"
-                and _tick_aligned_to_resolution(first["tick"], tpq, "32", int(loop_start or 0))
-                and _tick_aligned_to_resolution(second["tick"], tpq, "32", int(loop_start or 0))
-                and _is_straight32_exclusive_tick(first["tick"], tpq, int(loop_start or 0))
+            run_length = min(
+                run_lengths.get(first["source_index"], 0),
+                run_lengths.get(second["source_index"], 0),
             )
+            grid_preserved = selected_resolution == "32" and run_length >= STRAIGHT32_RUN_MIN_HITS
             if grid_preserved:
                 removable = False
             item = {
@@ -684,6 +781,7 @@ def detect_flams(events: Iterable[Any], tpq: int, loop_ticks: int | None = None,
                 "confidence": confidence, "cluster_like": third_close,
                 "remove_from_subdivision": removable,
                 "grid_preserved": grid_preserved,
+                "straight32_run_length": run_length,
                 "grace_key": (first["tick"], first["note"], first["track"]),
             }
             flams.append(item)
@@ -701,16 +799,20 @@ def detect_flams(events: Iterable[Any], tpq: int, loop_ticks: int | None = None,
             first_wrapped_tick += loop_ticks
             gap = first_wrapped_tick - last["tick"]
             available = last["source_index"] not in used_indices and first["source_index"] not in used_indices
-            if available and 0 < gap <= max_gap and last["velocity"] < first["velocity"]:
+            if available and 0 < gap <= max_gap and last["velocity"] <= first["velocity"]:
                 ratio = last["velocity"] / max(1, first["velocity"] )
-                confidence = "HIGH" if gap <= high_gap and ratio <= 0.75 else "MEDIUM" if ratio <= 0.90 else "LOW"
-                removable = confidence in {"HIGH", "MEDIUM"}
-                grid_preserved = (
-                    selected_resolution == "32"
-                    and _tick_aligned_to_resolution(last["tick"], tpq, "32", start)
-                    and _tick_aligned_to_resolution(first_wrapped_tick, tpq, "32", start)
-                    and _is_straight32_exclusive_tick(last["tick"], tpq, start)
+                equal_velocity = last["velocity"] == first["velocity"]
+                confidence = (
+                    "HIGH" if gap <= high_gap and ratio <= 0.75
+                    else "MEDIUM" if ratio <= 0.90 or equal_velocity
+                    else "LOW"
                 )
+                removable = confidence in {"HIGH", "MEDIUM"}
+                run_length = min(
+                    run_lengths.get(last["source_index"], 0),
+                    run_lengths.get(first["source_index"], 0),
+                )
+                grid_preserved = selected_resolution == "32" and run_length >= STRAIGHT32_RUN_MIN_HITS
                 if grid_preserved:
                     removable = False
                 item = {
@@ -724,6 +826,7 @@ def detect_flams(events: Iterable[Any], tpq: int, loop_ticks: int | None = None,
                     "confidence": confidence, "cluster_like": False,
                     "remove_from_subdivision": removable, "across_loop": True,
                     "grid_preserved": grid_preserved,
+                    "straight32_run_length": run_length,
                     "grace_key": (last["tick"], last["note"], last["track"]),
                 }
                 flams.append(item)
@@ -735,7 +838,11 @@ def detect_flams(events: Iterable[Any], tpq: int, loop_ticks: int | None = None,
         "flams": flams,
         "grace_keys": grace_keys,
         "grace_ticks": {key[0] for key in grace_keys},
-        "settings": {"flam_max_gap_ticks": max_gap, "flam_high_gap_ticks": high_gap},
+        "settings": {
+            "flam_max_gap_ticks": max_gap,
+            "flam_high_gap_ticks": high_gap,
+            "straight32_run_min_hits": STRAIGHT32_RUN_MIN_HITS,
+        },
     }
 
 

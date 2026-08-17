@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""adc-patternlab.py 260815a"
+"""adc-patternlab.py 260817b"
 
-One MIDI -> self-contained interactive HTML/SVG whole-file drum matrix.
+One MIDI or a directory of MIDI files -> self-contained interactive HTML/SVG drum matrices.
 Click the SVG to toggle RAW GM notes and two-bar SLOT_MAP display.
 Slot maps are loaded from canonical JSON; rhythm analysis uses adc_rhythm_analysis.
 """
@@ -17,7 +17,7 @@ from adc_rhythm_analysis import (
     SUPPORTED_RESOLUTIONS, analyze_event_rhythm, detect_flams,
 )
 
-SCRIPT_NAME="adc-patternlab.py"; VERSION="260815a"; VERSION_TEXT=f"{SCRIPT_NAME} {VERSION}"
+SCRIPT_NAME="adc-patternlab.py"; VERSION="260817b"; VERSION_TEXT=f"{SCRIPT_NAME} {VERSION}"
 VERY_WEAK_HIT_MAX_VELOCITY=30
 if tuple(SUPPORTED_RESOLUTIONS) != ("16", "32", "8T", "16T"):
     raise RuntimeError(
@@ -1280,33 +1280,107 @@ document.getElementById('download-csv').addEventListener('click',()=>{{
 }});
 }})();</script></body></html>'''
 
+def _process_one_midi(path: Path, output: Path, *, skip_leading_empty_bars: bool) -> tuple[bool, str]:
+    """Render one MIDI file. Return (success, status message)."""
+    try:
+        mid=MidiFile(str(path))
+    except Exception as e:
+        return False,f'[ERROR] {path.name}: cannot read MIDI: {e}'
+    try:
+        ev,ts,mx=collect(mid); all_bars=make_bars(mid.ticks_per_beat,ts,mx); bars_=all_bars; skipped=0
+        if skip_leading_empty_bars:
+            bars_,skipped=skip_leading_empty_bars(all_bars,ev)
+        bb=blocks(bars_,ev,mid.ticks_per_beat,path.name)
+        # Windows preserves an existing directory entry's old letter case when the
+        # same case-insensitive filename is opened again. Remove a legacy
+        # *_patternlab.html entry first so the requested *_PatternLab.html spelling
+        # is actually recorded on disk.
+        legacy=output.with_name(path.stem+'_patternlab.html')
+        if legacy.exists() and legacy.resolve() != output.resolve():
+            legacy.unlink()
+        elif legacy.exists() and legacy.name != output.name:
+            legacy.unlink()
+        output.parent.mkdir(parents=True,exist_ok=True)
+        output.write_text(render(path,mid,bars_,bb,skipped),encoding='utf-8')
+    except Exception as e:
+        return False,f'[ERROR] {path.name}: {e}'
+    return True,(f'[OK] {output} · bars={len(bars_)}, blocks={len(bb)}, '
+                 f'drum_note_on={len(ev)}, skipped_leading_empty_bars={skipped}')
+
+
+def _midi_files_in_directory(path: Path) -> List[Path]:
+    """Return direct-child .mid/.midi files in stable case-insensitive order."""
+    return sorted(
+        (p for p in path.iterdir() if p.is_file() and p.suffix.casefold() in {'.mid','.midi'}),
+        key=lambda p:p.name.casefold(),
+    )
+
+
 def main(argv=None):
-    p=argparse.ArgumentParser(prog=SCRIPT_NAME,description="Generate an interactive HTML/SVG drum pattern catalog from one MIDI file."); p.add_argument("input_midi",type=Path); p.add_argument("-o","--output",type=Path); p.add_argument("--slot-maps",type=Path,help="Canonical slot_map_definitions.json (default: beside this script)"); p.add_argument("--accent-levels",type=Path,help="accent_levels.json with 6-accent boundaries/representatives (default: beside this script)"); p.add_argument("--skip-leading-empty-bars",action="store_true",help="omit only leading bars without CH10 note-on events; preserve absolute bar numbers; internal/trailing empty blocks remain visible but are non-exportable"); p.add_argument("--version",action="version",version=VERSION_TEXT); a=p.parse_args(argv)
-    if not a.input_midi.is_file():print(f'[ERROR] not found: {a.input_midi}',file=sys.stderr);return 2
+    p=argparse.ArgumentParser(
+        prog=SCRIPT_NAME,
+        description=(
+            "Generate interactive HTML/SVG drum pattern catalogs from one MIDI file "
+            "or every MIDI file directly inside a directory."
+        ),
+    )
+    p.add_argument("input",type=Path,help="MIDI file, or directory containing MIDI files")
+    p.add_argument(
+        "-o","--output",type=Path,
+        help=(
+            "single-file mode: output HTML path; directory mode: output directory "
+            "(default: beside each input MIDI)"
+        ),
+    )
+    p.add_argument("--slot-maps",type=Path,help="Canonical slot_map_definitions.json (default: beside this script)")
+    p.add_argument("--accent-levels",type=Path,help="accent_levels.json with 6-accent boundaries/representatives (default: beside this script)")
+    p.add_argument("--skip-leading-empty-bars",action="store_true",help="omit only leading bars without CH10 note-on events; preserve absolute bar numbers; internal/trailing empty blocks remain visible but are non-exportable")
+    p.add_argument("--version",action="version",version=VERSION_TEXT)
+    a=p.parse_args(argv)
+
+    if not a.input.exists():
+        print(f'[ERROR] not found: {a.input}',file=sys.stderr);return 2
+    if not (a.input.is_file() or a.input.is_dir()):
+        print(f'[ERROR] input must be a MIDI file or directory: {a.input}',file=sys.stderr);return 2
+    if a.input.is_file() and a.input.suffix.casefold() not in {'.mid','.midi'}:
+        print(f'[ERROR] input file is not .mid/.midi: {a.input}',file=sys.stderr);return 2
+
     slot_map_path=a.slot_maps or Path(__file__).with_name("slot_map_definitions.json")
     accent_level_path=a.accent_levels or Path(__file__).with_name("accent_levels.json")
     global MAPS,ACCENT_LEVELS
     try:
         MAPS=load_slot_maps(slot_map_path)
         ACCENT_LEVELS=load_accent_levels(accent_level_path)
-    except ValueError as e:print(f'[ERROR] {e}',file=sys.stderr);return 2
-    try:mid=MidiFile(str(a.input_midi))
-    except Exception as e:print(f'[ERROR] cannot read MIDI: {e}',file=sys.stderr);return 2
-    ev,ts,mx=collect(mid); all_bars=make_bars(mid.ticks_per_beat,ts,mx); bars_=all_bars; skipped=0
-    if a.skip_leading_empty_bars:
-        bars_,skipped=skip_leading_empty_bars(all_bars,ev)
-    bb=blocks(bars_,ev,mid.ticks_per_beat,a.input_midi.name)
-    out=a.output or a.input_midi.with_name(a.input_midi.stem+'_PatternLab.html')
-    # Windows preserves an existing directory entry's old letter case when the
-    # same case-insensitive filename is opened again. Remove a legacy
-    # *_patternlab.html entry first so the requested *_PatternLab.html spelling
-    # is actually recorded on disk.
-    if a.output is None:
-        legacy=a.input_midi.with_name(a.input_midi.stem+'_patternlab.html')
-        if legacy.exists() and legacy.resolve() != out.resolve():
-            legacy.unlink()
-        elif legacy.exists() and legacy.name != out.name:
-            legacy.unlink()
-    out.write_text(render(a.input_midi,mid,bars_,bb,skipped),encoding='utf-8')
-    print(VERSION_TEXT); print(f'[OK] {out}'); print(f'[OK] bars={len(bars_)}, blocks={len(bb)}, drum_note_on={len(ev)}, skipped_leading_empty_bars={skipped}'); return 0
+    except ValueError as e:
+        print(f'[ERROR] {e}',file=sys.stderr);return 2
+
+    print(VERSION_TEXT)
+    if a.input.is_file():
+        out=a.output or a.input.with_name(a.input.stem+'_PatternLab.html')
+        if a.output is not None and out.exists() and out.is_dir():
+            print(f'[ERROR] --output must be an HTML file in single-file mode: {out}',file=sys.stderr);return 2
+        ok,msg=_process_one_midi(a.input,out,skip_leading_empty_bars=a.skip_leading_empty_bars)
+        print(msg,file=sys.stdout if ok else sys.stderr)
+        return 0 if ok else 2
+
+    midi_files=_midi_files_in_directory(a.input)
+    if not midi_files:
+        print(f'[ERROR] no .mid/.midi files directly inside: {a.input}',file=sys.stderr);return 2
+    output_dir=a.output or a.input
+    if output_dir.exists() and not output_dir.is_dir():
+        print(f'[ERROR] --output must be a directory in directory mode: {output_dir}',file=sys.stderr);return 2
+    output_dir.mkdir(parents=True,exist_ok=True)
+
+    print(f'[MODE] directory · {len(midi_files)} MIDI file(s) · output={output_dir}')
+    failures=0
+    for index,path in enumerate(midi_files,1):
+        out=output_dir/(path.stem+'_PatternLab.html')
+        ok,msg=_process_one_midi(path,out,skip_leading_empty_bars=a.skip_leading_empty_bars)
+        print(f'[{index}/{len(midi_files)}] {msg}',file=sys.stdout if ok else sys.stderr)
+        if not ok:
+            failures+=1
+    print(f'[DONE] success={len(midi_files)-failures}, failed={failures}')
+    return 0 if failures==0 else 1
+
+
 if __name__=='__main__':raise SystemExit(main())
