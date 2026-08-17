@@ -100,29 +100,60 @@ considered.
 
 ## 5. Protection of genuine fine-grid rhythms
 
-Fine-grid events must not automatically be converted to flams.
+Fine-grid alignment alone does not establish fine-grid rhythmic structure.
 
-A sequence may genuinely contain rhythmic material at the finer resolution,
-such as a drum roll or other sustained rapid figure.
+An event may fall on a straight-32 or triplet-16T position without that finer
+grid being musically required. Such isolated fine-grid positions may result
+from performance timing, transcription, or ornamental events. Therefore, the
+presence of one or more events on fine-grid positions is not by itself
+sufficient reason to select the finer subdivision.
+
+A finer subdivision should be retained only when there is positive structural
+evidence that the fine grid belongs to the rhythmic skeleton of the pattern.
+Such evidence is sought within the same drum family, rather than inferred from
+unrelated events occurring on different drum slots.
+
+In particular, consecutive same-family hits separated by the fine-grid step
+provide evidence for genuine fine-grid rhythmic material, such as a drum roll
+or other sustained rapid figure.
 
 Therefore:
 
-- a genuine straight-32 run remains **SUBDIV=32**;
-- a genuine triplet-16T run remains **SUBDIV=16T**.
-
-Sustained same-family fine-grid runs are protected from flam extraction.
+- a genuine same-family straight-32 rhythmic structure remains **SUBDIV=32**;
+- a genuine same-family triplet-16T rhythmic structure remains **SUBDIV=16T**;
+- isolated fine-grid positions do not by themselves force **SUBDIV=32** or
+  **SUBDIV=16T**;
+- events on different drum families or slots must not be combined merely to
+  establish fine-grid subdivision;
+- sustained same-family fine-grid runs are protected from flam extraction.
 
 This distinction is essential. The policy is not:
 
 > Convert 32 to 16, or 16T to 8T whenever possible.
 
-Rather, it is:
+Nor is it:
 
-> Collapse a finer subdivision only when the finer grid is required solely by
-> ornamental grace events.
+> Select 32 or 16T whenever all source events fit that finer grid.
+
+Rather, the governing principle is:
+
+> Select a fine subdivision only when the finer grid is supported by genuine
+> rhythmic structure. Collapse to the coarser grid when the apparent fine-grid
+> requirement is caused only by ornamental grace events or isolated fine-grid
+> positions without such structural support.
 
 For example, a genuine 32nd-note drum roll must remain a 32-grid pattern even
 if individual adjacent hits superficially resemble grace-to-main pairs.
+
+Conversely, an isolated event occurring on a straight-32 position does not make
+the pattern a 32-grid pattern merely because the complete set of MIDI events
+fits perfectly on a 32nd-note grid. If no same-family fine-grid structure
+supports that interpretation, the underlying rhythmic skeleton may remain
+straight-16.
+
+The same principle applies to the triplet family: isolated 16T-position events
+do not require **SUBDIV=16T** unless genuine same-family 16T rhythmic structure
+is present.
 
 ---
 
