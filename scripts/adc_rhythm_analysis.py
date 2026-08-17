@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""adc_rhythm_analysis.py 260817d
+"""adc_rhythm_analysis.py 260818b
 
 Shared grace/flam/ghost and straight-16/straight-32/8T/16T subdivision analysis for ADC Toolkit.
-Isolated exact-32nd grace→main pairs may be treated as flam ornaments even when velocities are equal; sustained same-family 32nd runs are preserved.
+Flam detection is intentionally conservative: short same-family pairs are candidates, while subdivision collapse is performed only when removing the presumed grace hits yields a complete coarser-grid skeleton. Ambiguous/off-grid cases remain visible for human review.
 Used by adc-patternlab.py and adc-mid2report.py.
 
 The module analyzes MIDI data only; it does not render output or modify MIDI files.
@@ -20,7 +20,7 @@ from typing import Any, Iterable
 from mido import Message, MidiFile
 
 SCRIPT_NAME = "adc_rhythm_analysis.py"
-VERSION = "260817d"
+VERSION = "260818b"
 VERSION_TEXT = f"{SCRIPT_NAME} {VERSION}"
 SUPPORTED_RESOLUTIONS = ("16", "32", "8T", "16T")
 
@@ -285,6 +285,65 @@ def _grid_fit_score(stat: dict) -> float:
     return 0.34 * aligned + 0.10 * closeness
 
 
+
+def fine_grid_structural_support(events: Iterable[Any], tpq: int,
+                                 resolution: str) -> dict:
+    """Measure within-family evidence for a genuine fine rhythmic grid.
+
+    Merely landing on a fine grid is not sufficient.  A fine resolution is
+    structurally supported only when at least one drum family contains
+    consecutive hits separated by one fine-grid step:
+
+        straight-32 : TPQ / 8
+        triplet-16T : TPQ / 6
+
+    This deliberately ignores cross-family coincidences.  An isolated onset on
+    an odd 32nd/16T phase may be timing variation or part of an ornament and
+    must not force the whole pattern onto a finer grid.
+    """
+    events = list(events)
+    cells = {"32": 8, "16T": 6}.get(str(resolution))
+    if not cells or tpq <= 0:
+        return {
+            "resolution": str(resolution),
+            "supported": False,
+            "pair_count": 0,
+            "families": [],
+            "step_ticks": 0.0,
+        }
+
+    step = tpq / float(cells)
+    tol = max(1.0, step * 0.05)
+    by_family: dict[str, list[int]] = defaultdict(list)
+
+    for event in events:
+        note = int(_get(event, "note", -1))
+        family = str(_get(
+            event, "family", ADT_DRUM_FAMILIES.get(note, f"N{note}")
+        ))
+        if family.startswith("N"):
+            continue
+        by_family[family].append(int(_get(event, "tick", 0)))
+
+    pair_count = 0
+    families = set()
+
+    for family, ticks in by_family.items():
+        ordered = sorted(set(ticks))
+        for first, second in zip(ordered, ordered[1:]):
+            if abs((second - first) - step) <= tol:
+                pair_count += 1
+                families.add(family)
+
+    return {
+        "resolution": str(resolution),
+        "supported": pair_count > 0,
+        "pair_count": pair_count,
+        "families": sorted(families),
+        "step_ticks": step,
+    }
+
+
 def combine_subdivision_evidence(base: dict, events: Iterable[Any], tpq: int,
                                   filename: str = "") -> dict:
     """Combine onset, duration, filename, and grid-fit evidence.
@@ -323,19 +382,31 @@ def combine_subdivision_evidence(base: dict, events: Iterable[Any], tpq: int,
     for kind in scores:
         scores[kind] += duration["scores"][kind] + hint["scores"][kind]
 
-    # Coarsest-grid rule for the straight family.
-    strong_32_identity = s32_only > 0
+    # Fine-grid selection requires structural evidence within the same drum
+    # family.  A single odd-phase onset -- especially one isolated from other
+    # hits of that family -- must not force the entire pattern onto 32 or 16T.
+    straight32_structure = fine_grid_structural_support(events, tpq, "32")
+    triplet16_structure = fine_grid_structural_support(events, tpq, "16T")
+
+    strong_32_identity = (
+        s32_only > 0
+        and bool(straight32_structure.get("supported"))
+    )
     if not strong_32_identity:
-        scores["straight-32"] = min(scores["straight-32"], scores["straight-16"] - 0.001)
+        scores["straight-32"] = min(
+            scores["straight-32"], scores["straight-16"] - 0.001
+        )
 
     t16_phase = details.get("16T_phase", [0, 0])
     strong_16t_identity = (
-        details.get("triplet_16t_only_hits", 0) >= 4
+        details.get("triplet_16t_only_hits", 0) > 0
+        and bool(triplet16_structure.get("supported"))
         and len(t16_phase) >= 2
-        and max(t16_phase) >= 3
     )
     if not strong_16t_identity:
-        scores["triplet-16T"] = min(scores["triplet-16T"], scores["triplet-8T"] - 0.001)
+        scores["triplet-16T"] = min(
+            scores["triplet-16T"], scores["triplet-8T"] - 0.001
+        )
 
     ranked = sorted(scores.items(), key=lambda item: item[1], reverse=True)
     winner, top = ranked[0]
@@ -358,6 +429,11 @@ def combine_subdivision_evidence(base: dict, events: Iterable[Any], tpq: int,
         perfect_winner = "straight-16" if "straight-16" in perfect else "straight-32"
     elif perfect and perfect <= {"triplet-8T", "triplet-16T"}:
         perfect_winner = "triplet-8T" if "triplet-8T" in perfect else "triplet-16T"
+
+    if perfect_winner == "straight-32" and not strong_32_identity:
+        perfect_winner = None
+    elif perfect_winner == "triplet-16T" and not strong_16t_identity:
+        perfect_winner = None
 
     if perfect_winner is not None:
         final = perfect_winner
@@ -392,6 +468,9 @@ def combine_subdivision_evidence(base: dict, events: Iterable[Any], tpq: int,
     }
     out["strong_32_identity"] = strong_32_identity
     out["strong_16t_identity"] = strong_16t_identity
+    out["straight32_structure"] = straight32_structure
+    out["triplet16_structure"] = triplet16_structure
+    out["fine_grid_alignment_requires_structure"] = True
     out["perfect_grid_fits"] = sorted(perfect)
     out["perfect_grid_override"] = perfect_winner
     out["duration_samples"] = duration["samples"]
@@ -461,7 +540,6 @@ def analyze_event_rhythm(events: Iterable[Any], tpq: int, filename: str = "",
 
     flam32_to_16 = False
     flam16t_to_8t = False
-
     if grace_indices and provisional_resolution == "32" and subdivision.get("resolution") != "32":
         s16_fit = float(subdivision.get("grid_fit", {}).get("straight-16", {}).get("aligned_ratio", 0.0))
         if s16_fit >= 0.999999:
@@ -481,8 +559,25 @@ def analyze_event_rhythm(events: Iterable[Any], tpq: int, filename: str = "",
     subdivision["fine_grid_flam_collapse"] = (
         "32->16" if flam32_to_16 else "16T->8T" if flam16t_to_8t else None
     )
+    final_resolution = subdivision.get("resolution")
+    review_flams = []
+    for item in flam_analysis["flams"]:
+        if final_resolution in {"16", "8T"} and item.get("remove_from_subdivision"):
+            main_on_grid = _tick_aligned_to_resolution(
+                int(item.get("main_tick", 0)), tpq, str(final_resolution), int(loop_start or 0)
+            )
+            item["main_on_final_grid"] = main_on_grid
+            if not main_on_grid:
+                item["needs_human_review"] = True
+                item["review_reason"] = "presumed main hit is off the selected coarse grid"
+                review_flams.append(item)
+            else:
+                item["needs_human_review"] = False
+
     subdivision["excluded_flam_grace_count"] = len(grace_indices)
     subdivision["provisional_resolution"] = provisional_resolution
+    subdivision["flam_review_required"] = bool(review_flams)
+    subdivision["flam_review_count"] = len(review_flams)
     subdivision["grid_preserved_flam_count"] = sum(
         1 for item in flam_analysis["flams"] if item.get("grid_preserved")
     )
@@ -752,7 +847,11 @@ def _triplet16_run_lengths(seq: list[dict], tpq: int, origin: int = 0,
 def detect_flams(events: Iterable[Any], tpq: int, loop_ticks: int | None = None,
                  loop_start: int | None = None,
                  selected_resolution: str | None = None) -> dict:
-    """Detect conservative grace/main flam candidates by ADT drum family.
+    """Detect conservative flam-like pair candidates by ADT drum family.
+
+    Candidate roles use the usual earlier=grace/later=main convention, but this
+    is an analytical hypothesis rather than guaranteed source notation. The
+    caller may flag an off-grid presumed main hit for human review.
 
     With selected_resolution="32", an isolated grace/main pair is still a
     flam candidate even when it lands exactly on the 32nd-note grid. Equal
