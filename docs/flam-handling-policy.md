@@ -1,6 +1,7 @@
 # Flam Handling Policy
 
-**Date:** 2026-08-17  
+**Created:** 2026-08-17  
+**Last Updated:** 2026-08-18  
 **Applies to:** Ardule Drum Patternology / ADX Drum
 
 ## 1. Purpose
@@ -39,6 +40,10 @@ Thus:
 This distinction allows the original timing information to be retained without
 forcing the ADT/ADP pattern onto an unnecessarily fine grid.
 
+Source MIDI timing is treated as primary evidence, but not as an infallible
+representation of the intended musical grid. Transcription, sequencing, or
+event-placement errors may occur and may require human interpretation.
+
 ---
 
 ## 3. Flam-induced subdivision refinement
@@ -47,9 +52,9 @@ When a pattern initially appears to require a finer subdivision, the analysis
 should determine whether the finer resolution is required by genuine rhythmic
 events or only by flam grace notes.
 
-If removal of flam grace candidates allows the remaining rhythmic events to fit
-perfectly on the next coarser grid within the same rhythmic family, the coarser
-grid is selected and the grace events are represented in ORN.
+If removal of flam grace candidates allows the remaining rhythmic events to be
+represented on the next coarser grid within the same rhythmic family, the
+coarser grid may be selected and the grace events represented in ORN.
 
 The currently defined collapses are:
 
@@ -66,7 +71,7 @@ For example:
             ↓
     remove grace hits from subdivision analysis
             ↓
-    remaining rhythmic skeleton fits 16
+    remaining rhythmic skeleton supports 16
             ↓
     ADT SUBDIV=16
     ORN FLAM events preserve the grace hits
@@ -78,23 +83,70 @@ The same principle applies independently to the triplet family:
 Straight and triplet subdivision families must not be mixed merely to obtain a
 coarser representation.
 
+Subdivision collapse is an analytical interpretation rather than a mechanical
+consequence of grid fit alone. Ambiguous cases may require human review.
+
 ---
 
 ## 4. Flam candidate
 
-A flam candidate consists of a short grace-to-main pair belonging to the same
-ADT drum family.
+A flam candidate consists of a short pair of closely spaced hits belonging to
+the same ADT drum family.
+
+In the usual interpretation, the earlier hit is treated as the grace hit and
+the later hit as the main hit. However, source MIDI timing and placement may
+not always encode the intended notation consistently. The temporal order alone
+should therefore not be regarded as infallible evidence of musical function.
 
 The analysis may accept a pair as a flam even when the two hits have equal
 velocity. This is necessary because MIDI transcriptions of explicitly notated
 flams do not necessarily encode the grace hit at a lower velocity.
 
-A grace hit that is stronger than the following main hit is not automatically
-accepted as a flam candidate.
+A presumed grace hit that is stronger than the presumed main hit is not
+automatically accepted as a flam candidate.
 
 The purpose of velocity comparison is therefore supportive rather than
-definitive. Temporal structure and local rhythmic context must also be
-considered.
+definitive. Temporal structure, drum family, grid relationship, repetition,
+and local rhythmic context must also be considered.
+
+### 4.1 Source MIDI anomalies and human review
+
+Flam detection is an analytical aid and does not guarantee reconstruction of
+the original musical notation.
+
+Source MIDI files may contain transcription, sequencing, or event-placement
+errors. In particular, a flam pair may be encoded so that the presumed main hit
+does not fall on the expected rhythmic grid even when the original notation
+clearly places the flam on that grid.
+
+Such cases shall not automatically redefine the rhythmic subdivision.
+
+For example, repeated source material may contain a same-family flam-like pair
+in which the presumed main hit is displaced by one fine-grid step, while an
+otherwise equivalent flam elsewhere in the same pattern is correctly aligned.
+Repeated occurrence of the same displacement may reflect copying of an
+incorrectly entered source pattern rather than intentional fine-grid rhythm.
+
+When the original notation or other contextual evidence supports the coarser
+rhythmic interpretation, such a discrepancy may be treated as a possible source
+MIDI anomaly rather than as evidence for a finer rhythmic grid.
+
+Therefore:
+
+- flam candidates should be identified from timing, drum family, velocity, grid
+  relationship, repetition, and local rhythmic context;
+- the presumed main hit is normally expected to correspond to the underlying
+  rhythmic grid, but source MIDI alignment alone is not infallible;
+- an off-grid presumed main hit should be flagged for review rather than used
+  automatically to force a finer subdivision;
+- repeated or internally inconsistent placement may indicate a transcription
+  or editing error in the source MIDI;
+- original notation, when available, may be used to resolve ambiguous cases;
+- listening may provide additional evidence when notation is unavailable;
+- final `SUBDIV` and `ORN` decisions may require human review.
+
+PatternLab should therefore distinguish between source MIDI timing and the
+curated musical interpretation derived from it.
 
 ---
 
@@ -172,7 +224,7 @@ Therefore a pattern such as:
     ORN=YES
 
 may faithfully represent source MIDI containing NOTE ON events at straight
-32nd-note positions when those events are flam grace notes.
+32nd-note positions when those events are interpreted as flam components.
 
 Likewise:
 
@@ -185,6 +237,10 @@ additional positions are attributable to flams.
 The existence of finer-timed source events does not by itself require the ADT
 subdivision to use that finer resolution.
 
+Conversely, ORN should not be used merely as a mechanism for hiding genuine
+fine-grid rhythmic events. The distinction between ornament and rhythmic
+structure must be established before the final representation is selected.
+
 ---
 
 ## 7. Visualization
@@ -196,11 +252,13 @@ The main hit is drawn normally on the ADT/ADP grid. A FLAM event is indicated
 by a smaller marker placed inside the main hit, aligned at its upper-left
 corner.
 
-This makes the flam visible without introducing an additional grid column or
-making the grace hit appear to be an independent rhythmic event.
+This visualization represents the **curated musical interpretation** rather
+than necessarily reproducing the literal geometry of every source MIDI NOTE ON
+event.
 
 The RAW representation remains available when the exact original NOTE ON
-position needs to be inspected.
+positions need to be inspected. RAW and interpreted views should therefore be
+regarded as complementary rather than interchangeable representations.
 
 ---
 
@@ -215,5 +273,16 @@ analysis:
 MIDI is treated as the timing-level source record, while ADT/ADP and ORN
 separate that information into a rhythmic skeleton and ornamental detail.
 
-This separation avoids artificial subdivision inflation while retaining the
-musically significant information present in the source.
+However, source MIDI is evidence rather than an infallible representation of
+musical intent. Transcription, sequencing, quantization, and event-placement
+errors may produce timing relationships that do not faithfully reproduce the
+original notation.
+
+Accordingly, automated analysis should identify and rank plausible
+interpretations, while ambiguous or internally inconsistent cases remain
+subject to human review. Original notation, when available, provides important
+evidence for resolving such cases.
+
+This separation between source timing and curated musical interpretation avoids
+artificial subdivision inflation while retaining musically significant
+information and making uncertainty explicit.
