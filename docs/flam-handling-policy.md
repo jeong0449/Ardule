@@ -52,9 +52,10 @@ When a pattern initially appears to require a finer subdivision, the analysis
 should determine whether the finer resolution is required by genuine rhythmic
 events or only by flam grace notes.
 
-If removal of flam grace candidates allows the remaining rhythmic events to be
-represented on the next coarser grid within the same rhythmic family, the
-coarser grid may be selected and the grace events represented in ORN.
+If removal of accepted flam grace candidates allows the remaining rhythmic
+events to be represented on the next coarser grid within the same rhythmic
+family, the coarser grid may be selected and the grace events represented in
+ORN.
 
 The currently defined collapses are:
 
@@ -69,7 +70,7 @@ For example:
             ↓
     fine-grid events identified as flam grace hits
             ↓
-    remove grace hits from subdivision analysis
+    remove accepted grace hits from subdivision analysis
             ↓
     remaining rhythmic skeleton supports 16
             ↓
@@ -83,6 +84,10 @@ The same principle applies independently to the triplet family:
 Straight and triplet subdivision families must not be mixed merely to obtain a
 coarser representation.
 
+Only accepted flam grace hits are removed during subdivision re-evaluation.
+Low-confidence or rejected candidate pairs remain part of the rhythmic event
+stream unless explicitly curated otherwise.
+
 Subdivision collapse is an analytical interpretation rather than a mechanical
 consequence of grid fit alone. Ambiguous cases may require human review.
 
@@ -95,19 +100,37 @@ the same ADT drum family.
 
 In the usual interpretation, the earlier hit is treated as the grace hit and
 the later hit as the main hit. However, source MIDI timing and placement may
-not always encode the intended notation consistently. The temporal order alone
+not always encode the intended notation consistently. Temporal order alone
 should therefore not be regarded as infallible evidence of musical function.
 
-The analysis may accept a pair as a flam even when the two hits have equal
-velocity. This is necessary because MIDI transcriptions of explicitly notated
-flams do not necessarily encode the grace hit at a lower velocity.
+Velocity is supporting evidence, not a hard exclusion criterion.
 
-A presumed grace hit that is stronger than the presumed main hit is not
-automatically accepted as a flam candidate.
+A pair may be accepted as a flam when the two hits have equal velocity, because
+MIDI transcriptions of explicitly notated flams do not necessarily encode the
+grace hit at a lower velocity.
 
-The purpose of velocity comparison is therefore supportive rather than
-definitive. Temporal structure, drum family, grid relationship, repetition,
-and local rhythmic context must also be considered.
+Likewise, a pair in which the earlier hit is stronger than the later hit shall
+not be discarded solely because of that velocity relationship. Such a pair may
+remain a lower-confidence flam candidate requiring contextual or human review.
+
+Candidate evaluation should therefore consider:
+
+- temporal proximity;
+- ADT drum family;
+- velocity relationship;
+- relationship to the candidate coarse grid;
+- repetition within the pattern;
+- neighboring same-family hits;
+- evidence for genuine fine-grid runs;
+- original notation or listening evidence when available.
+
+Candidate pairing must also avoid masking a valid flam that begins at the
+second event of a rejected or low-confidence pair. A low-confidence or rejected
+pair must therefore not automatically consume both events during candidate
+search.
+
+The purpose of flam detection is to identify plausible ornamental
+relationships, not to infer notation from velocity alone.
 
 ### 4.1 Source MIDI anomalies and human review
 
@@ -139,6 +162,8 @@ Therefore:
   rhythmic grid, but source MIDI alignment alone is not infallible;
 - an off-grid presumed main hit should be flagged for review rather than used
   automatically to force a finer subdivision;
+- unusual velocity ordering alone is not sufficient evidence to reject a flam;
+  it should reduce confidence rather than determine the interpretation;
 - repeated or internally inconsistent placement may indicate a transcription
   or editing error in the source MIDI;
 - original notation, when available, may be used to resolve ambiguous cases;
@@ -177,6 +202,8 @@ Therefore:
   **SUBDIV=16T**;
 - events on different drum families or slots must not be combined merely to
   establish fine-grid subdivision;
+- short same-family pairs may be examined as flam candidates, but a sustained
+  fine-grid run takes precedence and shall remain rhythmic material;
 - sustained same-family fine-grid runs are protected from flam extraction.
 
 This distinction is essential. The policy is not:
