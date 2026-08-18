@@ -30,10 +30,12 @@ Explore the **[scripts](./scripts/)** and use the analysis, visualization, and c
 
 The name **Ardule** originated from the combination of **Arduino** and **Module**, reflecting the project's roots in Arduino-based MIDI and sound module development.
 
-The drum pattern system grew out of this hardware-oriented experimentation and eventually led to the **ADT/ADP** family of drum pattern formats.
+The drum pattern system grew out of this hardware-oriented experimentation and eventually led to two complementary Ardule drum pattern formats.
 
-* **ADT** (*Ardule Drum Text*) is the human-readable drum pattern format.
-* **ADP** (*Ardule Drum Pattern*) is the compact binary-cache format generated from ADT for efficient storage and playback.
+* **Ardule Drum Text** (`.ADT`) is the human-readable format for representing drum patterns.
+* **Ardule Drum Pattern** (`.ADP`) is the compact binary-cache format generated from Ardule Drum Text for efficient storage and playback.
+
+The `.ADT` extension is used here specifically for **Ardule Drum Text** files. In music information retrieval and related research, **ADT** is also widely used as an abbreviation for *Automatic Drum Transcription*. To avoid ambiguity, this project generally uses the full name **Ardule Drum Text** when referring to the format, while `.ADT` denotes its file extension.
 
 What began as a lightweight way to represent and play drum patterns gradually expanded into a broader software ecosystem encompassing **MIDI analysis, pattern abstraction, format conversion, visualization, playback, and pattern libraries**.
 
