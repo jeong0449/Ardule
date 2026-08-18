@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""adc_rhythm_analysis.py 260818b
+"""adc_rhythm_analysis.py 260818c
 
 Shared grace/flam/ghost and straight-16/straight-32/8T/16T subdivision analysis for ADC Toolkit.
-Flam detection is intentionally conservative: short same-family pairs are candidates, while subdivision collapse is performed only when removing the presumed grace hits yields a complete coarser-grid skeleton. Ambiguous/off-grid cases remain visible for human review.
+Flam detection is intentionally conservative: short same-family pairs are candidates, rejected/LOW pairs do not consume the next event, and subdivision collapse occurs only when removing accepted grace hits yields a complete coarser-grid skeleton. Velocity is supporting evidence rather than a hard exclusion; ambiguous/off-grid cases remain visible for human review.
 Used by adc-patternlab.py and adc-mid2report.py.
 
 The module analyzes MIDI data only; it does not render output or modify MIDI files.
@@ -20,7 +20,7 @@ from typing import Any, Iterable
 from mido import Message, MidiFile
 
 SCRIPT_NAME = "adc_rhythm_analysis.py"
-VERSION = "260818b"
+VERSION = "260818c"
 VERSION_TEXT = f"{SCRIPT_NAME} {VERSION}"
 SUPPORTED_RESOLUTIONS = ("16", "32", "8T", "16T")
 
@@ -894,18 +894,24 @@ def detect_flams(events: Iterable[Any], tpq: int, loop_ticks: int | None = None,
         while i + 1 < len(seq):
             first, second = seq[i], seq[i + 1]
             gap = second["tick"] - first["tick"]
-            if gap <= 0 or gap > max_gap or first["velocity"] > second["velocity"]:
+            if gap <= 0 or gap > max_gap:
                 i += 1
                 continue
             third_close = i + 2 < len(seq) and 0 < seq[i + 2]["tick"] - second["tick"] <= max_gap
             ratio = first["velocity"] / max(1, second["velocity"])
             equal_velocity = first["velocity"] == second["velocity"]
+            reversed_velocity = first["velocity"] > second["velocity"]
+
             if gap <= high_gap and ratio <= 0.75 and not third_close:
                 confidence = "HIGH"
             elif not third_close and (ratio <= 0.90 or equal_velocity):
                 # Equal-velocity isolated pairs are valid flam candidates.
                 # Some source MIDI encodes a notated flam without velocity contrast.
                 confidence = "MEDIUM"
+            elif not third_close and reversed_velocity:
+                # Velocity direction is supporting evidence, not a hard exclusion.
+                # Keep the pair visible for review, but do not auto-remove it.
+                confidence = "LOW"
             else:
                 confidence = "LOW"
             removable = confidence in {"HIGH", "MEDIUM"} and not third_close
@@ -931,6 +937,7 @@ def detect_flams(events: Iterable[Any], tpq: int, loop_ticks: int | None = None,
                 "grace_velocity": first["velocity"], "main_velocity": second["velocity"],
                 "grace_index": first["source_index"], "main_index": second["source_index"],
                 "confidence": confidence, "cluster_like": third_close,
+                "reversed_velocity": reversed_velocity,
                 "remove_from_subdivision": removable,
                 "grid_preserved": grid_preserved,
                 "straight32_run_length": run_length,
@@ -940,8 +947,14 @@ def detect_flams(events: Iterable[Any], tpq: int, loop_ticks: int | None = None,
             flams.append(item)
             if removable:
                 grace_keys.add(item["grace_key"])
-            used_indices.update((first["source_index"], second["source_index"]))
-            i += 2
+
+            if removable or grid_preserved:
+                used_indices.update((first["source_index"], second["source_index"]))
+                i += 2
+            else:
+                # LOW/rejected candidates must not hide a valid pair beginning
+                # at the second event (e.g. ... 640,680,720 with flam 680->720).
+                i += 1
 
         if loop_ticks and loop_ticks > 0 and len(seq) >= 2:
             first, last = seq[0], seq[-1]
@@ -952,9 +965,10 @@ def detect_flams(events: Iterable[Any], tpq: int, loop_ticks: int | None = None,
             first_wrapped_tick += loop_ticks
             gap = first_wrapped_tick - last["tick"]
             available = last["source_index"] not in used_indices and first["source_index"] not in used_indices
-            if available and 0 < gap <= max_gap and last["velocity"] <= first["velocity"]:
+            if available and 0 < gap <= max_gap:
                 ratio = last["velocity"] / max(1, first["velocity"] )
                 equal_velocity = last["velocity"] == first["velocity"]
+                reversed_velocity = last["velocity"] > first["velocity"]
                 confidence = (
                     "HIGH" if gap <= high_gap and ratio <= 0.75
                     else "MEDIUM" if ratio <= 0.90 or equal_velocity
@@ -984,6 +998,7 @@ def detect_flams(events: Iterable[Any], tpq: int, loop_ticks: int | None = None,
                     "grace_velocity": last["velocity"], "main_velocity": first["velocity"],
                     "grace_index": last["source_index"], "main_index": first["source_index"],
                     "confidence": confidence, "cluster_like": False,
+                    "reversed_velocity": reversed_velocity,
                     "remove_from_subdivision": removable, "across_loop": True,
                     "grid_preserved": grid_preserved,
                     "straight32_run_length": run_length,

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""adc-patternlab.py 260817b"
+"""adc-patternlab.py 260818b"
 
 One MIDI or a directory of MIDI files -> self-contained interactive HTML/SVG drum matrices.
 Click the SVG to toggle RAW GM notes and two-bar SLOT_MAP display.
@@ -17,7 +17,7 @@ from adc_rhythm_analysis import (
     SUPPORTED_RESOLUTIONS, analyze_event_rhythm, detect_flams,
 )
 
-SCRIPT_NAME="adc-patternlab.py"; VERSION="260817b"; VERSION_TEXT=f"{SCRIPT_NAME} {VERSION}"
+SCRIPT_NAME="adc-patternlab.py"; VERSION="260818b"; VERSION_TEXT=f"{SCRIPT_NAME} {VERSION}"
 VERY_WEAK_HIT_MAX_VELOCITY=30
 if tuple(SUPPORTED_RESOLUTIONS) != ("16", "32", "8T", "16T"):
     raise RuntimeError(
@@ -433,15 +433,18 @@ def grid_omitted_event_ids(block, subdiv: str) -> Set[int]:
     tpq=max(1,int(block.subdiv.get("tpq",1)))
     step_ticks=tpq/cells_per_beat
 
+    # Re-evaluate flam candidates using the provisional fine-grid resolution.
+    # Example: after 16T -> 8T collapse, triplet flam spacing is still TPQ/6;
+    # using final 8T here would incorrectly apply the straight TPQ/8 threshold.
     flam_analysis=detect_flams(
         block.events,tpq,
         loop_ticks=block.end-block.start,loop_start=block.start,
-        selected_resolution=block.subdiv.get("resolution"),
+        selected_resolution=block.subdiv.get("provisional_resolution", block.subdiv.get("resolution")),
     )
     grace_ids={
         id(block.events[int(item["grace_index"])])
         for item in flam_analysis.get("flams",[])
-        if "grace_index" in item
+        if item.get("remove_from_subdivision") and "grace_index" in item
     }
 
     out=set()
@@ -569,16 +572,22 @@ def card(b,x,y,w=430,h=470,path=None):
         p.append(f'<line x1="{xx:.2f}" y1="{gy-4}" x2="{xx:.2f}" y2="{gy+gh}" class="barline"/>')
     p.append(f'<line x1="{gx+gw:.2f}" y1="{gy-4}" x2="{gx+gw:.2f}" y2="{gy+gh}" class="barline"/>')
 
-    flam_analysis=detect_flams(b.events,b.subdiv.get("tpq",1),loop_ticks=b.end-b.start,loop_start=b.start,selected_resolution=b.subdiv.get("resolution"))
+    flam_analysis=detect_flams(b.events,b.subdiv.get("tpq",1),loop_ticks=b.end-b.start,loop_start=b.start,selected_resolution=b.subdiv.get("provisional_resolution", b.subdiv.get("resolution")))
     excluded_grace_ids={id(b.events[int(item["grace_index"])]) for item in flam_analysis["flams"] if item.get("remove_from_subdivision") and "grace_index" in item}
     pair_role={}; pair_delta={}; pair_confidence={}; grace_remove={}; pair_grid_preserved={}
     for item in flam_analysis["flams"]:
+        accepted=bool(item.get("remove_from_subdivision"))
+        preserved=bool(item.get("grid_preserved"))
+        # LOW/rejected sliding-window pairs are internal search diagnostics.
+        # Do not paint them as musical flam candidates in the RAW card.
+        if not accepted and not preserved:
+            continue
         grace=b.events[item["grace_index"]]; main=b.events[item["main_index"]]; delta=item["gap_ticks"]
         pair_role[id(grace)]="grace"; pair_role[id(main)]="main"
         pair_delta[id(grace)]=pair_delta[id(main)]=delta
         pair_confidence[id(grace)]=pair_confidence[id(main)]=item["confidence"]
-        grace_remove[id(grace)]=bool(item.get("remove_from_subdivision"))
-        pair_grid_preserved[id(grace)]=pair_grid_preserved[id(main)]=bool(item.get("grid_preserved"))
+        grace_remove[id(grace)]=accepted
+        pair_grid_preserved[id(grace)]=pair_grid_preserved[id(main)]=preserved
     flam_threshold=flam_analysis["settings"].get("flam_max_gap_ticks",0)
 
     p.append('<g class="raw">'); rh=gh/len(raw); rmap={n:i for i,n in enumerate(raw)}
@@ -721,7 +730,7 @@ def card_controls(path, b, x, y, w=430, disabled=False):
         for item in detect_flams(
             b.events,b.subdiv.get("tpq",1),
             loop_ticks=b.end-b.start,loop_start=b.start,
-            selected_resolution=b.subdiv.get("resolution"),
+            selected_resolution=b.subdiv.get("provisional_resolution", b.subdiv.get("resolution")),
         )["flams"]
     )
     dis=' disabled' if disabled else ''
@@ -771,7 +780,7 @@ def render(path,mid,bars_,bb,skipped_leading_bars=0):
     for b in bb:
         if not b.events or b.ending_hit or b.duplicate_of is not None:
             continue
-        flam_analysis=detect_flams(b.events,b.subdiv.get("tpq",1),loop_ticks=b.end-b.start,loop_start=b.start,selected_resolution=b.subdiv.get("resolution"))
+        flam_analysis=detect_flams(b.events,b.subdiv.get("tpq",1),loop_ticks=b.end-b.start,loop_start=b.start,selected_resolution=b.subdiv.get("provisional_resolution", b.subdiv.get("resolution")))
         excluded=set()
         for item in flam_analysis.get("flams",[]):
             if item.get("remove_from_subdivision") and "grace_index" in item:
