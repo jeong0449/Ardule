@@ -16,7 +16,7 @@
 ## Try Ardule
 
 **Curious?**
-Download the self-contained [**Ardule Drum Player HTML file**](./ardule-drum-player.html) (~7.6 MB) and open it in your web browser. No installation is required. The player includes 44 embedded drum patterns and six drum kits, so you can start exploring immediately. It also runs on mobile devices, although the current interface is primarily designed for desktop screens.
+Download the self-contained [**Ardule Drum Player HTML file**](./ardule-drum-player.html) (~7.8 MB) and open it in your web browser. No installation is required. The player includes 44 embedded drum patterns and six drum kits, so you can start exploring immediately. It also runs on mobile devices, although the current interface is primarily designed for desktop screens.
 
 **Want more patterns?**
 Explore the **[Pattern Collection](./collections/)** and load additional ADT/ORN patterns into the player.
