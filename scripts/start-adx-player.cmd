@@ -2,8 +2,6 @@
 setlocal
 title ADX Drum MIDI Player
 
-rem FluidSynth and SoundFont paths are resolved by play_server.py.
-rem Double-click this file to start the playback service and open the browser player.
 cd /d "%~dp0"
 
 where py >nul 2>nul
@@ -16,7 +14,7 @@ if %errorlevel%==0 (
 if errorlevel 1 (
     echo.
     echo ADX MIDI player failed to start.
-    echo Check Python, FluidSynth, and SoundFont configuration in play_server.py.
+    echo Confirm that play_server.py, slot_map_definitions.json, and accent_levels.json are in this folder.
     pause
 )
 endlocal
