@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """Local PatternLab playback service using FluidSynth and an SF2 SoundFont.
 
-Version: 260811o
+Version: 260818p
 """
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ except ImportError:
     MidiFile = MidiTrack = Message = MetaMessage = None
 
 SCRIPT_NAME = "play_server.py"
-VERSION = "260818o"
+VERSION = "260818p"
 VERSION_TEXT = f"{SCRIPT_NAME} {VERSION}"
 
 HOST = "127.0.0.1"
@@ -51,7 +51,7 @@ NO_REPORT_HTML = r"""<!doctype html>
 <div class="modebar"><button id="modeMidi" class="active">MIDI</button><button id="modePattern">ADT / ADP</button><span class="spacer"></span><span id="modeHint" class="status">Standard MIDI playback</span></div>
 <div class="toolbar"><button id="roots">Computer</button><button id="up">Up</button><button id="refresh">Refresh</button><button id="stop">Stop</button><div id="location" class="location">Loading…</div><span id="status" class="status"></span></div>
 <div id="filters" class="filterbar" style="display:none"></div><div id="content"></div><div id="globalTransport" class="global-transport"></div>
-<footer>Read-only browser · play_server.py 260818o. ADP is preferred when same-basename ADT and ADP both exist. Same-basename ORN is applied automatically.</footer>
+<footer>Read-only browser · play_server.py 260818p. ADP is preferred when same-basename ADT and ADP both exist. Same-basename ORN is applied automatically.</footer>
 </section></main><script>
 (()=>{
 const $=id=>document.getElementById(id),content=$('content'),status=$('status'),locationBox=$('location'),filters=$('filters'),globalTransport=$('globalTransport');
@@ -76,12 +76,21 @@ function currentRollBar(elapsed){if(!midiRollData||!Array.isArray(midiRollData.b
 let rollScrollAnimation=null;
 function smoothRollScroll(wrap,target){
  if(rollScrollAnimation){cancelAnimationFrame(rollScrollAnimation);rollScrollAnimation=null}
+ const maxTarget=Math.max(0,wrap.scrollHeight-wrap.clientHeight);
+ target=Math.max(0,Math.min(maxTarget,target));
  const start=wrap.scrollTop,distance=target-start;
- if(Math.abs(distance)<2){wrap.scrollTop=target;return}
- const duration=420,startTime=performance.now();
- const ease=t=>1-Math.pow(1-t,3);
- const step=now=>{const t=Math.min(1,(now-startTime)/duration);wrap.scrollTop=start+distance*ease(t);if(t<1)rollScrollAnimation=requestAnimationFrame(step);else rollScrollAnimation=null};
- rollScrollAnimation=requestAnimationFrame(step)
+ if(Math.abs(distance)<1)return;
+ const duration=Math.min(1100,Math.max(700,Math.abs(distance)*2.2));
+ const ease=t=>t<0.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2;
+ let startTime=null;
+ const step=now=>{
+   if(startTime===null)startTime=now;
+   const t=Math.min(1,(now-startTime)/duration);
+   wrap.scrollTop=start+distance*ease(t);
+   if(t<1)rollScrollAnimation=requestAnimationFrame(step);
+   else{wrap.scrollTop=target;rollScrollAnimation=null}
+ };
+ requestAnimationFrame(()=>requestAnimationFrame(()=>{rollScrollAnimation=requestAnimationFrame(step)}))
 }
 function updateRollPlayback(elapsed){const svg=document.querySelector('.midi-roll-svg');if(!svg)return;const measure=currentRollBar(elapsed);let active=null;svg.querySelectorAll('.roll-bar-bg').forEach(x=>{const on=Number(x.dataset.measure)===measure;x.classList.toggle('playing',on);if(on)active=x});const label=document.querySelector('.roll-position');if(label)label.textContent=measure?`Bar ${measure}`:'—';if(!active)return;const system=Number(active.dataset.system);if(system===lastFollowSystem)return;const wrap=svg.closest('.midi-roll-wrap');if(!wrap)return;const first=svg.querySelector(`.roll-bar-bg[data-system="${system}"]`)||active;requestAnimationFrame(()=>{try{const vb=svg.viewBox&&svg.viewBox.baseVal?svg.viewBox.baseVal:null;const scale=vb&&vb.height>0?svg.clientHeight/vb.height:1;const y=Number(first.getAttribute('y'))||0;const target=Math.max(0,y*scale-36);smoothRollScroll(wrap,target);lastFollowSystem=system}catch(_e){lastFollowSystem=null}})}
 function renderMidiRoll(d){const box=$('detailBox');if(!box)return;midiRollData=d;lastFollowSystem=null;if(!d.notes||!d.notes.length){box.textContent='No CH10 drum notes.';return}const escA=v=>esc(v),barsPerRow=4,labelW=150,barW=112,rowH=18,headerH=42,gap=24;const systems=[];for(let i=0;i<d.bars.length;i+=barsPerRow)systems.push(d.bars.slice(i,i+barsPerRow));let y=12,totalH=20;const layouts=[];for(const bs of systems){const start=bs[0].start_tick,end=bs[bs.length-1].end_tick;const used=[...new Set(d.notes.filter(n=>n.start_tick>=start&&n.start_tick<end).map(n=>n.note))];const rows=d.note_order.filter(n=>used.includes(n));const rr=rows.length?rows:d.note_order.slice(0,1);const h=headerH+rr.length*rowH+12;layouts.push({bars:bs,rows:rr,y,h});y+=h+gap;totalH=y}const width=labelW+barsPerRow*barW+20;let h=`<div class="midi-status-line"><span><b>Drum Roll</b> · ${escA(d.ppqn_label)} · ${d.notes.length} notes</span><span class="roll-position">—</span></div><div class="midi-roll-wrap"><svg class="midi-roll-svg" viewBox="0 0 ${width} ${totalH}" role="img">`;for(const L of layouts){const plotTop=L.y+headerH,plotH=L.rows.length*rowH;h+=`<text x="8" y="${L.y+15}" class="roll-system-label">Bars ${L.bars[0].measure}–${L.bars[L.bars.length-1].measure}</text>`;const idx=new Map(L.rows.map((n,i)=>[n,i]));for(let ri=0;ri<L.rows.length;ri++){const note=L.rows[ri],yy=plotTop+ri*rowH+rowH/2;h+=`<text x="${labelW-8}" y="${yy+3}" text-anchor="end" class="roll-instrument">${escA(d.note_names[String(note)]||('GM '+note))}</text><line x1="${labelW}" y1="${yy+rowH/2}" x2="${labelW+L.bars.length*barW}" y2="${yy+rowH/2}" class="roll-staff"/>`}for(let bi=0;bi<L.bars.length;bi++){const b=L.bars[bi],x0=labelW+bi*barW,dur=Math.max(1,b.end_tick-b.start_tick);h+=`<rect x="${x0}" y="${plotTop-8}" width="${barW}" height="${plotH+8}" class="roll-bar-bg" data-measure="${b.measure}" data-system="${Math.floor((b.measure-1)/barsPerRow)}"/><line x1="${x0}" y1="${plotTop-8}" x2="${x0}" y2="${plotTop+plotH}" class="roll-bar-line"/><text x="${x0+5}" y="${plotTop-14}" class="roll-bar-number">${b.measure}</text><text x="${x0+barW-5}" y="${plotTop-14}" text-anchor="end" class="roll-meter">${b.numerator}/${b.denominator}</text>`;const beatTicks=d.ppqn*4/b.denominator;for(let beat=1;beat<b.numerator;beat++){const bx=x0+beat*beatTicks/dur*barW;h+=`<line x1="${bx}" y1="${plotTop}" x2="${bx}" y2="${plotTop+plotH}" class="roll-beat-line"/>`}const gridTicks=d.ppqn/4;for(let t=b.start_tick+gridTicks;t<b.end_tick;t+=gridTicks){const mul=(t-b.start_tick)/beatTicks;if(Math.abs(mul-Math.round(mul))<1e-8)continue;const gx=x0+(t-b.start_tick)/dur*barW;h+=`<line x1="${gx}" y1="${plotTop}" x2="${gx}" y2="${plotTop+plotH}" class="roll-grid-line"/>`}for(const n of d.notes){if(n.start_tick<b.start_tick||n.start_tick>=b.end_tick||!idx.has(n.note))continue;const xx=x0+(n.start_tick-b.start_tick)/dur*barW,yy=plotTop+idx.get(n.note)*rowH+rowH/2,x2=Math.min(x0+barW,Math.max(xx+1.5,xx+n.duration/dur*barW)),r=1.7+1.7*n.velocity/127;h+=`<line x1="${xx}" y1="${yy}" x2="${x2}" y2="${yy}" class="roll-note-duration"><title>${escA(n.position)} · ${escA(d.note_names[String(n.note)]||('GM '+n.note))} · velocity ${n.velocity}</title></line><circle cx="${xx}" cy="${yy}" r="${r}" class="roll-note"><title>${escA(n.position)} · ${escA(d.note_names[String(n.note)]||('GM '+n.note))} · velocity ${n.velocity}</title></circle>`} }const rx=labelW+L.bars.length*barW;h+=`<line x1="${rx}" y1="${plotTop-8}" x2="${rx}" y2="${plotTop+plotH}" class="roll-bar-line"/>`}h+='</svg></div>';box.innerHTML=h;updateRollPlayback(elapsedSeconds())}
