@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""adc-orn-writer.py 260817b
+"""adc-orn-writer.py 260818a
 
 Create ORN v1.0 sidecar files from a reviewed ADC PatternLab CSV and one
 original MIDI file or a directory of original MIDI files. Supports both FLAM grace events and ordinary
@@ -30,10 +30,10 @@ from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 import mido
 from mido import Message, MetaMessage, MidiFile
 
-from adc_rhythm_analysis import ADT_DRUM_FAMILIES, detect_flams
+from adc_rhythm_analysis import ADT_DRUM_FAMILIES, analyze_event_rhythm
 
 SCRIPT_NAME = "adc-orn-writer.py"
-VERSION = "260817b"
+VERSION = "260818a"
 VERSION_TEXT = f"{SCRIPT_NAME} {VERSION}"
 ORN_VERSION_LINE = "; ORN v1.0"
 CANONICAL_PPQN = 240
@@ -256,7 +256,7 @@ def build_orn_events(
     """Build ORN events from reviewed pattern data.
 
     Two event classes are emitted:
-      * FLAM: removable grace notes identified by detect_flams()
+      * FLAM: removable grace notes identified by the shared rhythm analysis
       * NOTE: ordinary note-ons that do not lie exactly on the selected ADT grid
 
     ADX never quantizes the time axis. ADT/ADP contains only exact on-grid
@@ -271,10 +271,24 @@ def build_orn_events(
     if not events:
         fail(f"CSV row {row.row_number}: no CH10 note_on events in bars {row.start_bar}-{row.end_bar}")
 
-    analysis = detect_flams(events, source_ppqn, loop_ticks=source_loop_ticks, loop_start=0)
+    # Use the same shared analysis path as PatternLab.  In particular,
+    # analyze_event_rhythm() first determines the provisional resolution
+    # (e.g. 16T), passes that to detect_flams(), removes accepted grace
+    # notes, and only then derives the curated final grid (e.g. 8T).
+    # Calling detect_flams() directly here would lose that provisional
+    # context and can misclassify a 40-tick triplet flam as an ordinary
+    # off-grid NOTE.
+    rhythm = analyze_event_rhythm(
+        events,
+        source_ppqn,
+        filename=row.file,
+        loop_ticks=source_loop_ticks,
+        loop_start=0,
+    )
+    flam_analysis = rhythm["flams"]
     removable_grace_keys = {
         (int(item["grace_tick"]), int(item["grace_note"]))
-        for item in analysis["flams"]
+        for item in flam_analysis["flams"]
         if item.get("remove_from_subdivision")
     }
 
@@ -286,7 +300,7 @@ def build_orn_events(
     orn_events: List[OrnEvent] = []
 
     # 1) Preserve confirmed flam/grace notes using the existing FLAM event type.
-    for item in analysis["flams"]:
+    for item in flam_analysis["flams"]:
         if not item.get("remove_from_subdivision"):
             continue
         grace_tick = canonical_tick(int(item["grace_tick"]), source_ppqn)
