@@ -40,7 +40,7 @@ from adc_rhythm_analysis import analyze_midi_rhythm, recommended_steps_per_bar
 
 
 SCRIPT_NAME = "adc-midi-report.py"
-VERSION = "260806c"
+VERSION = "260818b"
 VERSION_TEXT = f"{SCRIPT_NAME} {VERSION}"
 
 DRUM_CHANNEL = 9  # MIDI channel 10, zero-based
@@ -795,6 +795,25 @@ def write_drum_roll_html(
             )
 
             beat_ticks = mid.ticks_per_beat * 4 / denominator
+
+            # Sub-beat grid: dotted grey lines. Use a 16th-note visual grid
+            # (four cells per quarter-note beat); beat boundaries themselves
+            # are drawn separately as solid grey lines below.
+            grid_ticks = mid.ticks_per_beat / 4
+            grid_tick = start + grid_ticks
+            while grid_tick < end:
+                within_bar = grid_tick - start
+                # Skip positions that coincide with a beat boundary.
+                beat_multiple = within_bar / beat_ticks
+                if abs(beat_multiple - round(beat_multiple)) > 1e-9:
+                    gx = x0 + within_bar / duration * bar_width
+                    svg.append(
+                        f'<line x1="{gx:.2f}" y1="{plot_top}" x2="{gx:.2f}" '
+                        f'y2="{plot_top + plot_height}" class="grid-line"/>'
+                    )
+                grid_tick += grid_ticks
+
+            # Beat boundaries: solid grey lines.
             for beat in range(1, numerator):
                 bx = x0 + beat * beat_ticks / duration * bar_width
                 svg.append(
@@ -902,7 +921,8 @@ svg {{
 .staff-line {{ stroke: var(--rule); stroke-width: .7; }}
 .bar-line {{ stroke: #222; stroke-width: 1.1; }}
 .end-line {{ stroke-width: 2; }}
-.beat-line {{ stroke: var(--beat); stroke-width: .7; stroke-dasharray: 2 3; }}
+.beat-line {{ stroke: #b8b8b8; stroke-width: .8; }}
+.grid-line {{ stroke: #d7d7d7; stroke-width: .65; stroke-dasharray: 2 3; }}
 .note-duration {{
   stroke: #222;
   stroke-width: 1.35;
