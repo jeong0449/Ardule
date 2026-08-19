@@ -76,9 +76,9 @@ Its core workflow is summarized as:
 
 With the introduction of the ADT/ADP v2.3 specifications, the project has been reorganized into two independent repositories.
 
-- [Nano Ardule](https://github.com/jeong0449/NanoArdule) remains focused on the hardware and firmware implementation for Arduino Nano- and Raspberry Pi-based embedded MIDI playback.
+- [Nano Ardule](https://github.com/jeong0449/NanoArdule) remains focused on the hardware and firmware implementation for Arduino Nano-based embedded MIDI/drum playback.
 
-- **ADX Drum** is a new standalone software project dedicated to Standard MIDI drum analysis, drum pattern abstraction, ADT/ADP/ORN generation, pattern exchange, lightweight playback tools, and the drum pattern library.
+- **Ardule**, developed under the **Ardule Drum Patternology** concept, is a standalone software project dedicated to Standard MIDI drum analysis, drum pattern abstraction, ADT/ADP/ORN generation, pattern exchange, lightweight playback tools, and the drum pattern library.
 
 This separation clearly distinguishes the embedded playback platform from the software ecosystem, allowing both projects to evolve independently while sharing the same design philosophy.
 
@@ -107,17 +107,20 @@ This separation clearly distinguishes the embedded playback platform from the so
                             ▼
                            Play
                             │
-          ADX Drum Player • Nano Ardule • Fluid Ardule
+          Ardule Drum Player • Nano Ardule • Fluid Ardule
 ```
 
-The ADX Platform consists of four major components:
+# Platform Overview
 
-- [**ADC Toolkit**](./scripts/README_KO.md) – Tools for MIDI analysis, preprocessing, pattern abstraction, and format conversion (ADT/ADP v2.3, not v2.2; v2.2 was used by earlier generations of Nano Ardule)).
-- **ADT / ADP / ORN** – Open drum pattern specifications for human-readable editing, compact binary playback, and ornament representation.
-- **ADX Drum Player** – A lightweight player for validating and performing ADT/ADP/ORN patterns.
-- **Pattern Library** – A collection of reusable and exchangeable drum patterns derived from Standard MIDI files.
+The Ardule Platform consists of five major components:
 
-Together, these components provide a complete workflow from **performance MIDI** to **portable drum patterns**.
+* [**ADX Toolkit**](./scripts/README_KO.md) – A collection of tools for Standard MIDI drum analysis, preprocessing, pattern abstraction, format conversion, visualization, validation, and pattern authoring. It includes PatternLab, MIDI/ADT/ADP/ORN converters, reporting tools, patternbook generation, viewers, editors, and lightweight playback utilities.
+* [**ADT / ADP / ORN Specifications**](./specs/) – Portable drum pattern formats for human-readable representation, compact playback-oriented encoding, and ornament or microtiming information.
+* **ADX Drum Player / Studio** – Lightweight tools for loading, visualizing, editing, validating, and playing ADT/ADP/ORN drum patterns.
+* [[**Ardule MIDI Player**]](./midi-player/) – A standalone player for Standard MIDI Files with a web-based GUI and drum-roll visualization.
+* [**Pattern Library**](./collections/) – A growing collection of reusable and exchangeable drum patterns derived from Standard MIDI sources and organized for analysis, comparison, playback, and reuse.
+
+Together, these components provide a workflow from **Standard MIDI performance data** through **analysis and abstraction** to **portable drum patterns, editing, exchange, visualization, and playback**.
 
 ---
 
