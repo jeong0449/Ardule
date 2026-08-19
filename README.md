@@ -17,7 +17,7 @@
     </td>
     <td align="center" width="50%">
       <b>Ardule Drum Studio</b><br><br>
-      <img src="images/ardule-drum-player-v0.2.9-screenshot.png"
+      <img src="images/ardule-drum-studio-v0.4.6-screenshot.png"
            alt="Ardule Drum Player"
            width="400">
     </td>
