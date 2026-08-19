@@ -86,29 +86,31 @@ This separation clearly distinguishes the embedded playback platform from the so
 
 ## Workflow at a Glance
 
-```text
-                 Standard MIDI Drum Files
-                            │
-                            ▼
-                        Analyze
-                            │
-          MIDI analysis • PatternLab • Reports
-                            │
-                            ▼
-                        Abstract
-                            │
-              ADT • ADP • ORN Specifications
-                            │
-                            ▼
-                        Exchange
-                            │
-            Pattern Library • Portable Formats
-                            │
-                            ▼
-                           Play
-                            │
-          Ardule Drum Studio • Nano Ardule • Fluid Ardule
-```
+<div align="center">
+<pre>
+        Standard MIDI Drum Files
+                   │
+                   ▼
+               Analyze
+                   │
+ MIDI analysis • PatternLab • Reports
+                   │
+                   ▼
+               Abstract
+                   │
+     ADT • ADP • ORN Specifications
+                   │
+                   ▼
+               Exchange
+                   │
+   Pattern Library • Portable Formats
+                   │
+                   ▼
+                 Play
+                   │
+ Ardule Drum Studio • Nano Ardule • Fluid Ardule
+</pre>
+</div>
 
 # Platform Overview
 
