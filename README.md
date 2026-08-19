@@ -114,11 +114,15 @@ This separation clearly distinguishes the embedded playback platform from the so
 
 The Ardule Platform consists of five major components:
 
-* [**ADX Toolkit**](./scripts/README_KO.md) – A collection of tools for Standard MIDI drum analysis, preprocessing, pattern abstraction, format conversion, visualization, validation, and pattern authoring. It includes PatternLab, MIDI/ADT/ADP/ORN converters, reporting tools, patternbook generation, viewers, editors, and lightweight playback utilities.
+* [**ADX Toolkit**](./scripts/README_KO.md) – A collection of tools for Standard MIDI drum analysis, preprocessing, pattern abstraction, format conversion, visualization, and validation. It includes PatternLab, MIDI/ADT/ADP/ORN converters, reporting tools, and patternbook generation.
 * [**ADT / ADP / ORN Specifications**](./specs/) – Portable drum pattern formats for human-readable representation, compact playback-oriented encoding, and ornament or microtiming information.
-* **ADX Drum Player / Studio** – Lightweight tools for loading, visualizing, editing, validating, and playing ADT/ADP/ORN drum patterns.
-* [[**Ardule MIDI Player**]](./midi-player/) – A standalone player for Standard MIDI Files with a web-based GUI and drum-roll visualization.
+* [**Ardule MIDI Player**](./midi-player/) – A self-contained browser-based application for playing Standard MIDI Files with Channel 10 drum-roll visualization, distributed as a ready-to-run Windows package.
+* **Ardule Drum Player** – A self-contained HTML application for loading, visualizing, editing, and playing ADT/ADP/ORN drum patterns directly in a web browser.
 * [**Pattern Library**](./collections/) – A growing collection of reusable and exchangeable drum patterns derived from Standard MIDI sources and organized for analysis, comparison, playback, and reuse.
+
+>**Python-based ADX Drum Players:** The project also retains **`adx-drum-player.py`** and **`adx-drum-player-win.py`**, Python-based drum pattern players for Linux and Windows, respectively. They provide direct playback of ADT/ADP/ORN patterns from the command line while displaying the drum pattern in a **terminal-based grid view**. They also serve as useful reference and testing implementations of the pattern formats and playback logic.
+>
+>Unlike the self-contained Ardule Drum Player, these command-line players require **FluidSynth** and an appropriate **SoundFont (SF2)** to be installed or provided separately.
 
 Together, these components provide a workflow from **Standard MIDI performance data** through **analysis and abstraction** to **portable drum patterns, editing, exchange, visualization, and playback**.
 
