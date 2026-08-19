@@ -16,7 +16,7 @@
            width="400">
     </td>
     <td align="center" width="50%">
-      <b>Ardule Drum Player</b><br><br>
+      <b>Ardule Drum Studio</b><br><br>
       <img src="images/ardule-drum-player-v0.2.9-screenshot.png"
            alt="Ardule Drum Player"
            width="400">
@@ -40,7 +40,7 @@ Try **[Ardule MIDI Player](./midi-player/)**, a lightweight Standard MIDI File p
 ](https://github.com/jeong0449/Ardule/releases/download/midi-player-v0.1/ArduleMIDIPlayer-v0.1-Windows-x64.zip).
 
 **Curious about drum patterns?**  
-Download the self-contained [**Ardule Drum Player HTML file**](./ardule-drum-player.html) (~7.8 MB) and open it in your web browser. No installation is required. The player includes 44 embedded drum patterns and six drum kits, so you can start exploring immediately. It also runs on mobile devices, although the current interface is primarily designed for desktop screens.
+Download the self-contained [**Ardule Drum Studio HTML file**](./ardule-drum-studio-v0.4.6.html) (~7.8 MB) and open it in your web browser. No installation is required. The player includes 44 embedded drum patterns and six drum kits, so you can start exploring immediately. It also runs on mobile devices, although the current interface is primarily designed for desktop screens.
 
 **Want more patterns?**  
 Explore the **[Pattern Collection](./collections/)** and load additional ADT/ORN patterns into the Drum Player.
@@ -117,7 +117,7 @@ The Ardule Platform consists of five major components:
 * [**ADX Toolkit**](./scripts/README_KO.md) – A collection of tools for Standard MIDI drum analysis, preprocessing, pattern abstraction, format conversion, visualization, and validation. It includes PatternLab, MIDI/ADT/ADP/ORN converters, reporting tools, and patternbook generation.
 * [**ADT / ADP / ORN Specifications**](./specs/) – Portable drum pattern formats for human-readable representation, compact playback-oriented encoding, and ornament or microtiming information.
 * [**Ardule MIDI Player**](./midi-player/) – A self-contained browser-based application for playing Standard MIDI Files with Channel 10 drum-roll visualization, distributed as a ready-to-run Windows package.
-* **Ardule Drum Player** – A self-contained HTML application for loading, visualizing, editing, and playing ADT/ADP/ORN drum patterns directly in a web browser.
+* **Ardule Drum Studio (formerly Ardule Drum Player)** – A self-contained HTML application for loading, visualizing, editing, and playing ADT/ADP/ORN drum patterns directly in a web browser.
 * [**Pattern Library**](./collections/) – A growing collection of reusable and exchangeable drum patterns derived from Standard MIDI sources and organized for analysis, comparison, playback, and reuse.
 
 >**Python-based ADX Drum Players:** The project also retains **`adx-drum-player.py`** and **`adx-drum-player-win.py`**, Python-based drum pattern players for Linux and Windows, respectively. They provide direct playback of ADT/ADP/ORN patterns from the command line while displaying the drum pattern in a **terminal-based grid view**. They also serve as useful reference and testing implementations of the pattern formats and playback logic.
