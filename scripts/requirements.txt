@@ -1,8 +1,12 @@
-# ADX Toolkit
+# Ardule / ADX Toolkit Python dependencies
+#
+# Install with:
+#   python -m pip install -r requirements.txt
+#
+# External applications such as FluidSynth and SoundFont files
+# are not installed through pip.
+
 mido>=1.3.2
-pretty_midi>=0.2.10
-numpy>=1.26
-pandas>=2.2
-matplotlib>=3.9
-svgwrite>=1.4.3
+beautifulsoup4>=4.12
 reportlab>=5.0,<6
+svglib>=1.5
