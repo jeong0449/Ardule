@@ -7,18 +7,30 @@
 
 > **Note:** The term **ADX Drum** is still used in various parts of this documentation. To establish a more distinctive identity, it will gradually be replaced by **Ardule Drum Patternology**.
 
-<p align="center">
-  <b>Ardule MIDI Player</b><br>
-  <img src="images/ardule-midi-player-v0.1-screenshot.png"
-       alt="Ardule MIDI Player"
-       width="600">
-</p>
+<table>
+  <tr>
+    <td align="center" width="50%">
+      <b>Ardule MIDI Player</b><br><br>
+      <img src="images/ardule-midi-player-v0.1-screenshot.png"
+           alt="Ardule MIDI Player"
+           width="400">
+    </td>
+    <td align="center" width="50%">
+      <b>Ardule Drum Player</b><br><br>
+      <img src="images/ardule-drum-player-v0.2.9-screenshot.png"
+           alt="Ardule Drum Player"
+           width="400">
+    </td>
+  </tr>
+</table>
 
 <p align="center">
-  <b>Ardule Drum Player</b><br>
-  <img src="images/ardule-drum-player-v0.2.9-screenshot.png"
-       alt="Ardule Drum Player"
-       width="600">
+  <b>▶ Watch the demo</b><br><br>
+  <a href="https://youtu.be/CefWvE4Tx2c">
+    <img src="https://img.youtube.com/vi/CefWvE4Tx2c/maxresdefault.jpg"
+         alt="Ardule MIDI Player and Drum Player Demo"
+         width="600">
+  </a>
 </p>
 
 ## Try Ardule
