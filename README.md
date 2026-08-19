@@ -29,24 +29,24 @@
   <a href="https://youtu.be/CefWvE4Tx2c">
     <img src="https://img.youtube.com/vi/CefWvE4Tx2c/maxresdefault.jpg"
          alt="Ardule MIDI Player and Drum Player Demo"
-         width="600">
+         width="500">
   </a>
 </p>
 
 ## Try Ardule
 
-**Want to play and inspect MIDI files?**  
+**Want to play MIDI files and inspect their drum roll?**  
 Try **[Ardule MIDI Player](./midi-player/)**, a lightweight Standard MIDI File player with a web-based GUI and a dedicated Channel 10 drum-roll view. It supports Full Mix, Drums Solo, and Drums Mute modes. A ready-to-run Windows x64 version, including FluidSynth, a General MIDI compatible SoundFont, and a demo MIDI file, is available from the [ArduleMIDIPlayer-v0.1-Windows-x64.zip
 ](https://github.com/jeong0449/Ardule/releases/download/midi-player-v0.1/ArduleMIDIPlayer-v0.1-Windows-x64.zip).
 
 **Curious about drum patterns?**  
-Download the self-contained [**Ardule Drum Studio HTML file**](./ardule-drum-studio-v0.4.6.html) (~7.8 MB) and open it in your web browser. No installation is required. The player includes 44 embedded drum patterns and six drum kits, so you can start exploring immediately. It also runs on mobile devices, although the current interface is primarily designed for desktop screens.
+Download the self-contained [**Ardule Drum Studio HTML file**](./ardule-drum-studio-v0.4.6.html) (~7.8 MB) and open it in your web browser. No installation is required. The Studio includes 44 embedded drum patterns and six drum kits, so you can start exploring immediately. You can also **drag and drop your own ADT/ORN pattern files directly into the Studio** to visualize, edit, and play them. It also runs on mobile devices, although the current interface is primarily designed for desktop screens.
 
 **Want more patterns?**  
-Explore the **[Pattern Collection](./collections/)** and load additional ADT/ORN patterns into the Drum Player.
+Explore the **[Pattern Collection](./collections/)** and drag ADT/ORN pattern files into **Ardule Drum Studio** for visualization, editing, and playback. You can also browse the **PDF pattern books** included in the collection for a convenient visual reference to the available patterns.
 
 **Want to study drum patterns yourself?**  
-Explore the **[scripts](./scripts/)** and use the analysis, visualization, and conversion tools to examine Standard MIDI drum performances and create your own ADT/ADP/ORN patterns.
+Explore the **[scripts](./scripts/)** and use the analysis, visualization, and conversion tools to examine Standard MIDI drum performances and **derive ADT/ADP/ORN patterns from existing MIDI data**.
 
 ---
 
@@ -84,7 +84,7 @@ This separation clearly distinguishes the embedded playback platform from the so
 
 ---
 
-## Platform Overview
+## Workflow at a Glance
 
 ```text
                  Standard MIDI Drum Files
@@ -107,7 +107,7 @@ This separation clearly distinguishes the embedded playback platform from the so
                             ▼
                            Play
                             │
-          Ardule Drum Player • Nano Ardule • Fluid Ardule
+          Ardule Drum Studio • Nano Ardule • Fluid Ardule
 ```
 
 # Platform Overview
