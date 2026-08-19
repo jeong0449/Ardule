@@ -8,6 +8,14 @@
 > **Note:** The term **ADX Drum** is still used in various parts of this documentation. To establish a more distinctive identity, it will gradually be replaced by **Ardule Drum Patternology**.
 
 <p align="center">
+  <b>Ardule MIDI Player</b><br>
+  <img src="images/ardule-midi-player-v0.1-screenshot.png"
+       alt="Ardule MIDI Player"
+       width="600">
+</p>
+
+<p align="center">
+  <b>Ardule Drum Player</b><br>
   <img src="images/ardule-drum-player-v0.2.9-screenshot.png"
        alt="Ardule Drum Player"
        width="600">
