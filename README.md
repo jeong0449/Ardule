@@ -35,9 +35,8 @@
 
 ## Try Ardule
 
-**Want to play MIDI files and inspect their drum roll?**  
-Try **[Ardule MIDI Player](./midi-player/)**, a lightweight Standard MIDI File player with a web-based GUI and a dedicated Channel 10 drum-roll view. It supports Full Mix, Drums Solo, and Drums Mute modes. A ready-to-run Windows x64 version, including FluidSynth, a General MIDI compatible SoundFont, and a demo MIDI file, is available from the [ArduleMIDIPlayer-v0.1-Windows-x64.zip
-](https://github.com/jeong0449/Ardule/releases/download/midi-player-v0.1/ArduleMIDIPlayer-v0.1-Windows-x64.zip).
+**Want to play MIDI files and inspect their drum rolls?**  
+Try **[Ardule MIDI Player](./midi-player/)**, a lightweight Standard MIDI File player with a web-based GUI and a dedicated Channel 10 drum-roll view. It supports Full Mix, Drums Solo, and Drums Mute modes. A ready-to-run Windows x64 version [**ArduleMIDIPlayer-v0.1-Windows-x64.zip**](https://github.com/jeong0449/Ardule/releases/download/midi-player-v0.1/ArduleMIDIPlayer-v0.1-Windows-x64.zip), including FluidSynth, a General MIDI-compatible SoundFont, and a demo MIDI file, is also available.
 
 **Curious about drum patterns?**  
 Download the self-contained [**Ardule Drum Studio HTML file**](./ardule-drum-studio-v0.4.6.html) (~7.8 MB) and open it in your web browser. No installation is required. The Studio includes 44 embedded drum patterns and six drum kits, so you can start exploring immediately. You can also **drag and drop your own ADT/ORN pattern files directly into the Studio** to visualize, edit, and play them. It also runs on mobile devices, although the current interface is primarily designed for desktop screens.
