@@ -18,7 +18,7 @@ Optional utilities:
 - CSV export for directory summaries
 
 Created: 2026-08-05
-Version: 260805b
+Version: 260821b
 """
 
 from __future__ import annotations
@@ -40,7 +40,7 @@ from adc_rhythm_analysis import analyze_midi_rhythm, recommended_steps_per_bar
 
 
 SCRIPT_NAME = "adc-midi-report.py"
-VERSION = "260818b"
+VERSION = "260821b"
 VERSION_TEXT = f"{SCRIPT_NAME} {VERSION}"
 
 DRUM_CHANNEL = 9  # MIDI channel 10, zero-based
@@ -95,6 +95,199 @@ GM_DRUM_NAMES: Dict[int, str] = {
     78: "Mute Cuica", 79: "Open Cuica", 80: "Mute Triangle",
     81: "Open Triangle",
 }
+
+
+# Canonical Level-1 drum abstraction used for corpus-scale slot analysis.
+# Multiple GM note numbers that represent closely related drum articulations are
+# folded into one reusable ADT-style instrument class. Notes outside the GM
+# percussion vocabulary remain explicit as UNKNOWN_<note> so that no source
+# vocabulary is silently discarded.
+DRUM_ABSTRACTION: Dict[int, str] = {
+    35: "KICK", 36: "KICK",
+    37: "SIDE_STICK",
+    38: "SNARE", 40: "SNARE",
+    39: "CLAP",
+    42: "CLOSED_HH",
+    44: "PEDAL_HH",
+    46: "OPEN_HH",
+    41: "LOW_TOM", 43: "LOW_TOM",
+    45: "MID_TOM", 47: "MID_TOM",
+    48: "HIGH_TOM", 50: "HIGH_TOM",
+    49: "CRASH", 52: "CRASH", 55: "CRASH", 57: "CRASH",
+    51: "RIDE", 53: "RIDE", 59: "RIDE",
+    54: "TAMBOURINE",
+    56: "COWBELL",
+    58: "VIBRASLAP",
+    60: "BONGO", 61: "BONGO",
+    62: "CONGA", 63: "CONGA", 64: "CONGA",
+    65: "TIMBALE", 66: "TIMBALE",
+    67: "AGOGO", 68: "AGOGO",
+    69: "CABASA",
+    70: "MARACAS",
+    71: "WHISTLE", 72: "WHISTLE",
+    73: "GUIRO", 74: "GUIRO",
+    75: "CLAVES",
+    76: "WOOD_BLOCK", 77: "WOOD_BLOCK",
+    78: "CUICA", 79: "CUICA",
+    80: "TRIANGLE", 81: "TRIANGLE",
+    # Common extended percussion notes encountered in the Universal SMF corpus.
+    82: "SHAKER",
+    83: "JINGLE_BELL",
+    84: "BELL_TREE",
+    85: "CASTANETS",
+    86: "SURDO", 87: "SURDO",
+}
+
+
+def abstract_drum_slot(note_number: int) -> str:
+    """Return the canonical Level-1 abstract slot name for a CH10 MIDI note."""
+    return DRUM_ABSTRACTION.get(note_number, f"UNKNOWN_{note_number}")
+
+
+def drum_slot_metrics(drum_notes: Sequence[PairedNote]) -> dict:
+    """Build CSV-friendly raw and Level-1 abstract vocabulary metrics."""
+    raw_notes = sorted({note.note for note in drum_notes})
+    abstract_slots = sorted({abstract_drum_slot(note) for note in raw_notes})
+    known_slots = sorted(slot for slot in abstract_slots if not slot.startswith("UNKNOWN_"))
+    non_gm_notes = sorted(note for note in raw_notes if note not in GM_DRUM_NAMES)
+    unmapped_notes = sorted(note for note in raw_notes if note not in DRUM_ABSTRACTION)
+
+    return {
+        "raw_note_count": len(raw_notes),
+        "raw_notes": ",".join(map(str, raw_notes)),
+        "abstract_slot_count": len(abstract_slots),
+        "abstract_slots": ",".join(abstract_slots),
+        "known_abstract_slot_count": len(known_slots),
+        "known_abstract_slots": ",".join(known_slots),
+        # Backward-compatible meaning: notes outside the GM percussion map 35..81.
+        "unknown_note_count": len(non_gm_notes),
+        "unknown_drum_notes": ",".join(map(str, non_gm_notes)),
+        "non_gm_note_count": len(non_gm_notes),
+        "non_gm_drum_notes": ",".join(map(str, non_gm_notes)),
+        # Stronger vNext concept: notes for which the abstraction table has no rule.
+        "unmapped_note_count": len(unmapped_notes),
+        "unmapped_drum_notes": ",".join(map(str, unmapped_notes)),
+        "raw_to_abstract_reduction": len(raw_notes) - len(abstract_slots),
+        "within_12_slots": "YES" if abstract_slots and len(abstract_slots) <= 12 else ("NO" if abstract_slots else ""),
+        "within_16_slots": "YES" if abstract_slots and len(abstract_slots) <= 16 else ("NO" if abstract_slots else ""),
+    }
+
+
+def detect_sysex_labels(data_tuple: Sequence[int]) -> set[str]:
+    """Classify one SysEx payload (mido excludes F0/F7)."""
+    data = tuple(int(x) for x in data_tuple)
+    labels: set[str] = set()
+    if not data:
+        return {"EMPTY_SYSEX"}
+
+    if len(data) >= 4 and data[0] == 0x7E and data[2] == 0x09:
+        if data[3] == 0x01:
+            labels.add("GM_SYSTEM_ON")
+        elif data[3] == 0x02:
+            labels.add("GM_SYSTEM_OFF")
+        elif data[3] == 0x03:
+            labels.add("GM2_SYSTEM_ON")
+        else:
+            labels.add("UNIVERSAL_NONREALTIME")
+        return labels
+
+    if data[0] == 0x7F:
+        return {"UNIVERSAL_REALTIME"}
+
+    if data[0] == 0x41:
+        labels.add("ROLAND_SYSEX")
+        if len(data) >= 3 and data[2] == 0x42:
+            labels.add("ROLAND_MODEL_42_GS")
+        if (
+            len(data) >= 8
+            and data[2] == 0x42
+            and data[3] == 0x12
+            and data[4] == 0x40
+            and data[5] == 0x00
+            and data[6] == 0x7F
+            and data[7] == 0x00
+        ):
+            labels.add("GS_RESET")
+        return labels
+
+    if data[0] == 0x43:
+        labels.add("YAMAHA_SYSEX")
+        if len(data) >= 3 and data[2] == 0x4C:
+            labels.add("YAMAHA_MODEL_4C_XG")
+        if (
+            len(data) >= 7
+            and data[2] == 0x4C
+            and data[3] == 0x00
+            and data[4] == 0x00
+            and data[5] == 0x7E
+            and data[6] == 0x00
+        ):
+            labels.add("XG_SYSTEM_ON")
+        return labels
+
+    if data[0] == 0x00 and len(data) >= 3:
+        labels.add(f"EXTENDED_MANUFACTURER_{data[0]:02X}_{data[1]:02X}_{data[2]:02X}")
+    else:
+        labels.add(f"OTHER_MANUFACTURER_{data[0]:02X}")
+    return labels
+
+
+def sysex_metrics(mid: MidiFile) -> dict:
+    """Return CSV-friendly GM/GS/XG SysEx evidence and a conservative dialect label."""
+    sysex_count = 0
+    labels: set[str] = set()
+    manufacturer_ids: set[str] = set()
+
+    for track in mid.tracks:
+        for msg in track:
+            if msg.type != "sysex":
+                continue
+            sysex_count += 1
+            data = tuple(int(x) for x in msg.data)
+            labels.update(detect_sysex_labels(data))
+            if data:
+                if data[0] == 0x00 and len(data) >= 3:
+                    manufacturer_ids.add(f"{data[0]:02X}-{data[1]:02X}-{data[2]:02X}")
+                else:
+                    manufacturer_ids.add(f"{data[0]:02X}")
+
+    has_gs_reset = "GS_RESET" in labels
+    has_xg_on = "XG_SYSTEM_ON" in labels
+    has_roland = "ROLAND_SYSEX" in labels or "ROLAND_MODEL_42_GS" in labels
+    has_yamaha = "YAMAHA_SYSEX" in labels or "YAMAHA_MODEL_4C_XG" in labels
+    has_gm = bool({"GM_SYSTEM_ON", "GM2_SYSTEM_ON", "GM_SYSTEM_OFF"} & labels)
+
+    if has_gs_reset and has_xg_on:
+        dialect = "MIXED_GS_XG"
+    elif has_gs_reset:
+        dialect = "ROLAND_GS_SC_CONFIRMED"
+    elif has_xg_on:
+        dialect = "YAMAHA_XG_CONFIRMED"
+    elif has_roland and has_yamaha:
+        dialect = "MIXED_MANUFACTURER"
+    elif has_roland:
+        dialect = "ROLAND_GS_SC_LIKELY"
+    elif has_yamaha:
+        dialect = "YAMAHA_XG_LIKELY"
+    elif has_gm:
+        dialect = "GM_GM2"
+    elif sysex_count == 0:
+        dialect = "NO_SYSEX"
+    else:
+        dialect = "OTHER_SYSEX"
+
+    return {
+        "sysex_count": sysex_count,
+        "sysex_manufacturer_ids": ";".join(sorted(manufacturer_ids)),
+        "sysex_labels": ";".join(sorted(labels)),
+        "midi_dialect": dialect,
+        "has_gm_system_on": "YES" if "GM_SYSTEM_ON" in labels else "NO",
+        "has_gm2_system_on": "YES" if "GM2_SYSTEM_ON" in labels else "NO",
+        "has_gs_reset": "YES" if has_gs_reset else "NO",
+        "has_roland_gs_model42": "YES" if "ROLAND_MODEL_42_GS" in labels else "NO",
+        "has_xg_system_on": "YES" if has_xg_on else "NO",
+        "has_yamaha_xg_model4c": "YES" if "YAMAHA_MODEL_4C_XG" in labels else "NO",
+    }
 
 
 
@@ -1240,6 +1433,7 @@ def summarize_file(path: Path) -> dict:
     row = {
         "file": str(path),
         "status": "ok",
+        "error_type": "",
         "error": "",
     }
     try:
@@ -1249,7 +1443,8 @@ def summarize_file(path: Path) -> dict:
         timed = collect_timed_messages(mid)
         notes = pair_notes(timed)
         drum_notes = [note for note in notes if note.channel == DRUM_CHANNEL]
-        unknown = sorted({note.note for note in drum_notes if note.note not in GM_DRUM_NAMES})
+        slot_metrics = drum_slot_metrics(drum_notes)
+        sx_metrics = sysex_metrics(mid)
         end_tick = max((item.tick for item in timed), default=0)
         tempo_segments, time_signature_segments = build_analysis_segments(timed, end_tick)
         rhythm = analyze_midi_rhythm(mid, time_signature_segments, path.name)
@@ -1275,7 +1470,8 @@ def summarize_file(path: Path) -> dict:
             "time_signature_changes": len(signatures),
             "has_ch10": bool(drum_notes),
             "drum_events": len(drum_notes),
-            "unknown_drum_notes": ",".join(map(str, unknown)),
+            **slot_metrics,
+            **sx_metrics,
             "subdivision": subdivision.get("subdivision", subdivision.get("grid", "unknown")),
             "confidence": round(float(subdivision.get("confidence", 0.0)), 3),
             "triplet_bars": ",".join(map(str, triplet_bars)),
@@ -1285,7 +1481,11 @@ def summarize_file(path: Path) -> dict:
             "ghost_bars": ",".join(map(str, sorted({g["bar"] for g in ghosts}))),
         })
     except Exception as exc:
-        row.update({"status": "error", "error": str(exc)})
+        row.update({
+            "status": "error",
+            "error_type": type(exc).__name__,
+            "error": str(exc) or repr(exc),
+        })
     return row
 
 
@@ -1318,15 +1518,27 @@ def print_directory_summary(rows: Sequence[dict], root: Path) -> None:
     print(f"Files scanned                 : {len(rows)}")
     print(f"Successfully analyzed         : {len(ok)}")
     print(f"Files with CH10 drums         : {sum(bool(row.get('has_ch10')) for row in ok)}")
+    ch10_rows = [row for row in ok if row.get("has_ch10")]
     print(f"Files with unknown drum notes : {sum(bool(row.get('unknown_drum_notes')) for row in ok)}")
+    print(f"CH10 files within 12 slots    : {sum(row.get('within_12_slots') == 'YES' for row in ch10_rows)}")
+    print(f"CH10 files within 16 slots    : {sum(row.get('within_16_slots') == 'YES' for row in ch10_rows)}")
+    print(f"CH10 files over 16 slots      : {sum(row.get('within_16_slots') == 'NO' for row in ch10_rows)}")
     print(f"Files with flam candidates    : {sum(int(row.get('flam_count', 0)) > 0 for row in ok)}")
     print(f"Files with ghost candidates   : {sum(int(row.get('ghost_count', 0)) > 0 for row in ok)}")
     print(f"Errors                        : {len(errors)}")
+    dialect_counts = Counter(str(row.get("midi_dialect", "")) for row in ok)
+    if dialect_counts:
+        print("\nSysEx / MIDI dialect")
+        print("-" * 120)
+        for dialect, count in sorted(dialect_counts.items(), key=lambda item: (-item[1], item[0])):
+            print(f"{dialect:<32}: {count}")
     if errors:
         print("\nErrors")
         print("-" * 120)
         for row in errors:
-            print(f"{row['file']}: {row['error']}")
+            kind = row.get("error_type", "")
+            prefix = f"{kind}: " if kind else ""
+            print(f"{row['file']}: {prefix}{row['error']}")
 
 
 def write_summary_csv(rows: Sequence[dict], target: Path) -> None:
@@ -1335,9 +1547,19 @@ def write_summary_csv(rows: Sequence[dict], target: Path) -> None:
         "file", "midi_type", "tracks", "ppqn", "duration_sec",
         "initial_tempo", "tempo_changes", "time_signature",
         "time_signature_changes", "has_ch10", "drum_events",
-        "unknown_drum_notes", "subdivision", "confidence",
-        "triplet_bars", "flam_count", "flam_bars", "ghost_count",
-        "ghost_bars", "status", "error",
+        "raw_note_count", "raw_notes",
+        "abstract_slot_count", "abstract_slots",
+        "known_abstract_slot_count", "known_abstract_slots",
+        "unknown_note_count", "unknown_drum_notes",
+        "non_gm_note_count", "non_gm_drum_notes",
+        "unmapped_note_count", "unmapped_drum_notes",
+        "raw_to_abstract_reduction", "within_12_slots", "within_16_slots",
+        "sysex_count", "sysex_manufacturer_ids", "sysex_labels", "midi_dialect",
+        "has_gm_system_on", "has_gm2_system_on", "has_gs_reset",
+        "has_roland_gs_model42", "has_xg_system_on", "has_yamaha_xg_model4c",
+        "subdivision", "confidence", "triplet_bars",
+        "flam_count", "flam_bars", "ghost_count", "ghost_bars",
+        "status", "error_type", "error",
     ]
     with target.open("w", newline="", encoding="utf-8-sig") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames, extrasaction="ignore")
@@ -1505,7 +1727,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--csv",
         type=Path,
-        help="write the directory summary to CSV",
+        help=(
+            "directory-summary CSV path; default for directory input: "
+            "<input>/adc-midi-report.csv"
+        ),
+    )
+    parser.add_argument(
+        "--no-csv",
+        action="store_true",
+        help="do not write the automatic CSV summary for directory input",
     )
     parser.add_argument(
         "--version",
@@ -1531,9 +1761,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if args.input.is_dir():
         rows = [summarize_file(path) for path in files]
         print_directory_summary(rows, args.input)
-        if args.csv:
-            write_summary_csv(rows, args.csv)
-            print(f"\n[WROTE] {args.csv}")
+        if not args.no_csv:
+            csv_target = args.csv if args.csv is not None else args.input / "adc-midi-report.csv"
+            write_summary_csv(rows, csv_target)
+            print(f"\n[WROTE] {csv_target}")
 
         # File-generating operations may be applied to every MIDI in the directory.
         if any((args.write_type0, args.extract_drums, args.write_drum_roll)):
