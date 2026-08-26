@@ -6,10 +6,10 @@ The SC-D70 incorporates the SC-8820 sound map, and its manual provides detailed 
 
 ## Files
 
-- [`sc-d70-sc8820-drum-map-10kits.csv`](./sc-d70-sc8820-drum-maps/sc-d70-sc8820-drum-map-10kits.csv)  
+- [`sc-d70-sc8820-drum-map-10kits.csv`](./sc-d70-sc8820-drum-map-10kits.csv)  
   Tabular representation for analysis and inspection.
 
-- [`sc-d70-sc8820-drum-map-10kits.json`](./sc-d70-sc8820-drum-maps/sc-d70-sc8820-drum-map-10kits.json)  
+- [`sc-d70-sc8820-drum-map-10kits.json`](./sc-d70-sc8820-drum-map-10kits.json)  
   Machine-readable hierarchical representation of the same reference data.
 
 ## Scope
