@@ -17,7 +17,7 @@ from adc_rhythm_analysis import (
     SUPPORTED_RESOLUTIONS, analyze_event_rhythm, detect_flams,
 )
 
-SCRIPT_NAME="adc-patternlab.py"; VERSION="260829j"; VERSION_TEXT=f"{SCRIPT_NAME} {VERSION}"
+SCRIPT_NAME="adc-patternlab.py"; VERSION="260829p"; VERSION_TEXT=f"{SCRIPT_NAME} {VERSION}"
 VERY_WEAK_HIT_MAX_VELOCITY=30
 if tuple(SUPPORTED_RESOLUTIONS) != ("16", "32", "8T", "16T"):
     raise RuntimeError(
@@ -1243,6 +1243,228 @@ def _core_groove_summary_html(order, representative, counts, first_block):
 
 
 
+
+def _transition_graph_html(counts, transitions, first_block):
+    """Deterministic force-directed SVG of observed one-bar transitions.
+
+    Layout is always calculated from *all* non-self transitions.  Edge filters
+    affect visibility only, never node placement.  A Fruchterman-Reingold style
+    simulation is run without boundary clamping and the finished coordinates are
+    fitted into the SVG viewport.  This avoids the rectangular perimeter effect
+    caused by repulsion against hard drawing bounds.
+    """
+    nodes=sorted(counts)
+    if not nodes:
+        return '<div class="analysis-muted">No pattern transitions.</div>'
+
+    width,height=560,390
+    margin=28.0
+    max_count=max(counts.values()) if counts else 1
+    radii={p:9.0+8.0*math.sqrt(counts.get(p,1)/max_count) for p in nodes}
+
+    # All directed transitions contribute to an undirected layout spring.
+    # Self-transitions are rendered as loops but do not affect node positions.
+    pair_weight={}
+    degree={p:0.0 for p in nodes}
+    for a in sorted(transitions):
+        for b,c in sorted(transitions.get(a,{}).items()):
+            if a not in degree or b not in degree or c<=0 or a==b:
+                continue
+            key=(a,b) if a<b else (b,a)
+            pair_weight[key]=pair_weight.get(key,0.0)+float(c)
+    for (a,b),w in pair_weight.items():
+        degree[a]+=w; degree[b]+=w
+
+    # Deterministic pseudo-random cloud.  No ring and no dependence on runtime RNG.
+    positions={}
+    spread=150.0
+    for i,p in enumerate(nodes):
+        h=(p*2654435761 + (i+1)*2246822519) & 0xffffffff
+        hx=((h & 0xffff)/65535.0)-0.5
+        hy=(((h>>16) & 0xffff)/65535.0)-0.5
+        positions[p]=[hx*spread,hy*spread]
+
+    # Standard FR-style forces.  Compared with the previous target-length spring,
+    # attraction is deliberately much stronger at long range, so connected nodes
+    # form visible clusters instead of being repelled against the viewport border.
+    sim_area=260.0*180.0
+    k=math.sqrt(sim_area/max(1,len(nodes)))
+    temperature=70.0
+    iterations=360
+    for iteration in range(iterations):
+        disp={p:[0.0,0.0] for p in nodes}
+
+        # Coulomb-like repulsion.
+        for i,a in enumerate(nodes):
+            ax,ay=positions[a]
+            for b in nodes[i+1:]:
+                bx,by=positions[b]
+                dx=ax-bx; dy=ay-by
+                dist=max(0.75,math.hypot(dx,dy))
+                force=(k*k)/dist
+                ux=dx/dist; uy=dy/dist
+                disp[a][0]+=ux*force; disp[a][1]+=uy*force
+                disp[b][0]-=ux*force; disp[b][1]-=uy*force
+
+        # Spring attraction with a non-zero rest length.  The earlier FR term
+        # pulled every connected pair toward zero distance, producing an overly
+        # dense central knot.  A rest length preserves graph structure while
+        # leaving enough room for labels and hover targets.
+        target_len=2.05*k
+        for (a,b),w in pair_weight.items():
+            ax,ay=positions[a]; bx,by=positions[b]
+            dx=ax-bx; dy=ay-by
+            dist=max(0.75,math.hypot(dx,dy))
+            weight=1.0+0.10*math.log1p(w)
+            force=(dist-target_len)*0.27*weight
+            ux=dx/dist; uy=dy/dist
+            disp[a][0]-=ux*force; disp[a][1]-=uy*force
+            disp[b][0]+=ux*force; disp[b][1]+=uy*force
+
+        # Gentle gravity keeps the whole connected song network compact.  Truly
+        # isolated nodes get a little more gravity so they do not drift arbitrarily.
+        for p in nodes:
+            x,y=positions[p]
+            gravity=0.006 if degree.get(p,0)>0 else 0.018
+            disp[p][0]-=x*gravity
+            disp[p][1]-=y*gravity
+
+        # Integrate without viewport clamping. Cooling is deterministic.
+        cool=temperature*(1.0-iteration/iterations)
+        cool=max(0.35,cool)
+        for p in nodes:
+            dx,dy=disp[p]
+            mag=max(1e-9,math.hypot(dx,dy))
+            step=min(cool,mag)
+            positions[p][0]+=dx/mag*step
+            positions[p][1]+=dy/mag*step
+
+    # Fit the converged cloud into the SVG only after simulation.  Node radii are
+    # accommodated by the margin; preserving aspect ratio keeps topology legible.
+    xs=[positions[p][0] for p in nodes]; ys=[positions[p][1] for p in nodes]
+    minx,maxx=min(xs),max(xs); miny,maxy=min(ys),max(ys)
+    spanx=max(1.0,maxx-minx); spany=max(1.0,maxy-miny)
+    availw=width-2*margin; availh=height-2*margin
+    scale=min(availw/spanx,availh/spany)
+    usedw=spanx*scale; usedh=spany*scale
+    ox=(width-usedw)/2.0; oy=(height-usedh)/2.0
+    for p in nodes:
+        positions[p][0]=ox+(positions[p][0]-minx)*scale
+        positions[p][1]=oy+(positions[p][1]-miny)*scale
+
+    # Pixel-space collision pass.  Force simulation works in abstract units,
+    # but labels are drawn in pixels.  Enforce a visible gap after viewport fit
+    # so dense hubs remain readable without destroying the overall topology.
+    collision_gap=18.0
+    for _ in range(90):
+        moved=False
+        for i,a in enumerate(nodes):
+            ax,ay=positions[a]
+            for b in nodes[i+1:]:
+                bx,by=positions[b]
+                dx=ax-bx; dy=ay-by
+                dist=math.hypot(dx,dy)
+                min_dist=radii[a]+radii[b]+collision_gap
+                if dist+1e-6 >= min_dist:
+                    continue
+                if dist < 1e-6:
+                    # deterministic separation for coincident points
+                    ang=((a*37+b*17)%360)*math.pi/180.0
+                    ux,uy=math.cos(ang),math.sin(ang)
+                    dist=0.0
+                else:
+                    ux,uy=dx/dist,dy/dist
+                push=(min_dist-dist)*0.52
+                positions[a][0]+=ux*push; positions[a][1]+=uy*push
+                positions[b][0]-=ux*push; positions[b][1]-=uy*push
+                ax,ay=positions[a]
+                moved=True
+        for p in nodes:
+            r=radii[p]
+            positions[p][0]=min(width-margin-r,max(margin+r,positions[p][0]))
+            positions[p][1]=min(height-margin-r,max(margin+r,positions[p][1]))
+        if not moved:
+            break
+
+    edge_parts=[]
+    label_parts=[]
+    for a in sorted(transitions):
+        for b,c in sorted(transitions.get(a,{}).items()):
+            if a not in positions or b not in positions or c<=0:
+                continue
+            repeated=' repeated-edge' if c>1 else ''
+            self_cls=' self-edge' if a==b else ''
+            attrs=(f'class="transition-edge{repeated}{self_cls}" data-transition-count="{c}" '
+                   f'data-self="{1 if a==b else 0}" data-source="{a}" data-target="{b}"')
+            x1,y1=positions[a]; x2,y2=positions[b]
+            ra=radii[a]; rb=radii[b]
+            stroke_w=min(5.5,0.9+0.68*math.sqrt(c))
+            if a==b:
+                r=ra
+                side=-1 if a%2 else 1
+                d=(f'M {x1+side*r*0.45:.1f} {y1-r*0.78:.1f} '
+                   f'C {x1+side*r*2.35:.1f} {y1-r*2.55:.1f}, '
+                   f'{x1+side*r*2.65:.1f} {y1+r*1.10:.1f}, '
+                   f'{x1+side*r*0.82:.1f} {y1+r*0.46:.1f}')
+                edge_parts.append(
+                    f'<path {attrs} d="{d}" fill="none" stroke-width="{stroke_w:.2f}" marker-end="url(#transition-arrow)"/>'
+                )
+                if c>1:
+                    label_parts.append(
+                        f'<text class="transition-edge-label{repeated}{self_cls}" data-transition-count="{c}" data-self="1" '
+                        f'data-source="{a}" data-target="{b}" data-loop-side="{side}" x="{x1+side*r*2.18:.1f}" y="{y1-r*0.98:.1f}">{c}</text>'
+                    )
+                continue
+
+            dx=x2-x1; dy=y2-y1; dist=max(1.0,math.hypot(dx,dy)); ux=dx/dist; uy=dy/dist
+            sx=x1+ux*(ra+2); sy=y1+uy*(ra+2)
+            ex=x2-ux*(rb+5); ey=y2-uy*(rb+5)
+            perp_x=-uy; perp_y=ux
+            direction=1 if a<b else -1
+            bend=min(22.0,4.0+0.018*dist)*direction
+            mx=(sx+ex)/2+perp_x*bend; my=(sy+ey)/2+perp_y*bend
+            d=f'M {sx:.1f} {sy:.1f} Q {mx:.1f} {my:.1f} {ex:.1f} {ey:.1f}'
+            edge_parts.append(
+                f'<path {attrs} data-bend="{bend:.2f}" d="{d}" fill="none" stroke-width="{stroke_w:.2f}" marker-end="url(#transition-arrow)"/>'
+            )
+            if c>1:
+                label_parts.append(
+                    f'<text class="transition-edge-label{repeated}" data-transition-count="{c}" data-self="0" '
+                    f'data-source="{a}" data-target="{b}" data-bend="{bend:.2f}" x="{mx:.1f}" y="{my-3:.1f}">{c}</text>'
+                )
+
+    node_parts=[]
+    for p in nodes:
+        x,y=positions[p]; r=radii[p]
+        node_parts.append(
+            f'<a class="transition-node pattern-reference" href="#" data-jump-block="{first_block.get(p,"")}" data-pattern="{p}" data-x="{x:.1f}" data-y="{y:.1f}" data-r="{r:.1f}" '
+            f'aria-label="Pattern P{p:03d}, {counts.get(p,0)} occurrence(s)">'
+            f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{r:.1f}"/>'
+            f'<text x="{x:.1f}" y="{y+3.4:.1f}">P{p:03d}</text>'
+            f'<title>P{p:03d} · {counts.get(p,0)} occurrence(s) · hover: preview · click: RAW play</title>'
+            '</a>'
+        )
+
+    return (
+        '<div class="transition-graph-toolbar">'
+        '<label>Edges <select class="transition-graph-filter" aria-label="Transition graph edge filter">'
+        '<option value="all" selected>All</option>'
+        '<option value="repeated">Repeated only</option>'
+        '<option value="no-self">Hide self</option>'
+        '</select></label>'
+        '<span class="transition-graph-legend">force-directed · drag nodes to inspect links · layout uses all transitions · node size = occurrences · edge width = count</span>'
+        '</div>'
+        f'<svg class="transition-graph" viewBox="0 0 {width} {height}" role="img" '
+        'aria-label="Observed one-bar pattern transition graph">'
+        '<defs><marker id="transition-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">'
+        '<path d="M 0 0 L 10 5 L 0 10 z" class="transition-arrowhead"/></marker></defs>'
+        '<g class="transition-edges">'+''.join(edge_parts)+'</g>'
+        '<g class="transition-edge-labels">'+''.join(label_parts)+'</g>'
+        '<g class="transition-nodes">'+''.join(node_parts)+'</g>'
+        '</svg>'
+    )
+
+
 def _pattern_analysis_html(bb):
     """One-bar distribution, condensed sequence, transitions, and variations."""
     eligible=[b for b in bb if b.events and not b.ending_hit and b.pattern_no>0]
@@ -1325,13 +1547,19 @@ def _pattern_analysis_html(bb):
     trans_body=''.join(trans_rows) or '<tr><td colspan="3">No transitions.</td></tr>'
     var_body=''.join(variation_rows) or '<tr><td colspan="5">No patterns to compare.</td></tr>'
     sequence_html=_condensed_sequence_html(bb,first_block)
+    transition_graph_html=_transition_graph_html(counts,transitions,first_block)
     family_html=_core_groove_summary_html(order,representative,counts,first_block)
 
     return (
         '<section class="pattern-analysis" id="pattern-analysis">'
+        '<div class="sequence-transition-grid">'
         '<div class="analysis-panel sequence-panel"><h2>Condensed Bar Sequence</h2>'
         '<p class="analysis-note">Consecutive repetitions are collapsed as Pxxx ×N. Duplicate bars omitted from the gallery remain visible here as repeat counts. Hover a pattern reference to preview its grid; click it to play the original RAW pattern directly.</p>'
         '<div class="sequence-strip">'+sequence_html+'</div></div>'
+        '<div class="analysis-panel transition-graph-panel"><h2>Pattern Transition Graph</h2>'
+        '<p class="analysis-note">The fixed song path folded into observed Pxxx → Pxxx relations. Empty/ending bars break the chain. Hover a node to preview its pattern; click it for RAW playback.</p>'
+        +transition_graph_html+'</div>'
+        '</div>'
         '<div class="analysis-grid">'
         '<div class="analysis-panel"><h2>1-bar Pattern Distribution</h2>'
         f'<p class="analysis-note">{total} catalogable bar(s). Pattern identity is based on one-bar SLOT_MAP abstraction; velocity and duration are ignored.</p>'
@@ -1407,7 +1635,7 @@ def render(path,mid,bars_,bb,skipped_leading_bars=0):
 
 .header-top{{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}}.brand h1{{margin:0;font-size:19px;line-height:1.1}}.brand-sub{{margin-top:2px;color:var(--muted);font-size:10.5px}}.header-state{{display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end}}.mode-badge{{padding:3px 8px;border-radius:999px;background:var(--bg);border:1px solid var(--line);font-size:10.5px;font-weight:800}}.summary{{margin-top:5px;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}.header-actions{{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:6px;padding-top:6px;border-top:1px solid var(--line)}}.tool-groups{{display:flex;align-items:center;gap:12px;flex-wrap:wrap}}.tool-group{{display:flex;align-items:center;gap:5px}}.tool-group+.tool-group{{padding-left:12px;border-left:1px solid var(--line)}}.tool-label{{color:var(--muted);font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.04em}}.header-actions button{{margin:0;padding:5px 9px;font-size:11px}}.service-area{{display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end}}.global-correction{{display:grid;grid-template-columns:auto auto auto minmax(180px,1fr) auto auto;align-items:center;gap:6px;margin-top:5px;padding-top:5px;border-top:1px dashed var(--line);font-size:10.5px}}.global-correction strong{{font-size:10px;text-transform:uppercase;letter-spacing:.035em;color:var(--muted)}}.global-correction label{{display:flex;align-items:center;gap:4px;white-space:nowrap}}.global-correction select{{padding:3px 5px;border:1px solid var(--line);border-radius:5px;background:var(--panel);color:var(--ink);font-size:10.5px}}.global-correction .correction-result{{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-variant-numeric:tabular-nums}}.global-correction .correction-result b{{color:var(--ink)}}#save-corrected-midi,#preview-corrected-midi{{margin:0;padding:5px 9px;background:var(--panel);font-size:10.5px}}.service-dot{{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--major)}}.service-dot.online{{background:#16a34a}}.service-dot.offline{{background:#dc2626}}.service-text{{font-size:10.5px;color:var(--muted)}}.legend-panel{{margin:0;padding:0;border:0;background:transparent}}.legend-panel summary{{cursor:pointer;font-size:10.5px;font-weight:700;color:var(--muted);list-style:none}}.legend-panel summary::-webkit-details-marker{{display:none}}.legend-content{{position:absolute;right:18px;top:100%;width:min(680px,calc(100vw - 36px));padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--panel);box-shadow:0 8px 24px rgba(0,0,0,.18);font-size:11px;color:var(--muted);line-height:1.7}}@media(max-width:950px){{.header-actions{{align-items:flex-start}}.service-text{{display:none}}.global-correction{{grid-template-columns:auto auto auto 1fr}}#preview-corrected-midi,#save-corrected-midi{{grid-row:2}}}}
 .genre-modal-backdrop{{position:fixed;inset:0;z-index:5000;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.48)}}.genre-modal-backdrop[hidden]{{display:none}}.genre-modal{{width:min(440px,calc(100vw - 32px));padding:18px;border:1px solid var(--line);border-radius:12px;background:var(--panel);box-shadow:0 18px 48px rgba(0,0,0,.28)}}.genre-modal h2{{margin:0 0 7px;font-size:18px}}.genre-modal p{{margin:0 0 12px;color:var(--muted);font-size:12px;line-height:1.5}}.genre-modal label{{display:grid;grid-template-columns:auto 1fr;gap:8px;align-items:center;font-size:12px;font-weight:700}}.genre-modal select,.genre-modal input{{width:100%;padding:7px;border:1px solid var(--line);border-radius:7px;background:var(--panel);color:var(--ink);text-transform:uppercase}}.genre-modal-hint{{margin-top:8px!important;font-size:10.5px!important}}.genre-modal-actions{{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}}.number-gap-title{{fill:var(--warn)!important}}
-.pattern-analysis{{margin:0 12px 16px;display:grid;grid-template-columns:1fr;gap:12px;max-width:{sw}px}}.analysis-grid{{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.25fr);gap:12px}}.analysis-panel{{background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:12px 14px;min-width:0}}.analysis-panel h2{{margin:0 0 4px;font-size:15px}}.analysis-note{{margin:0 0 9px;color:var(--muted);font-size:11px;line-height:1.45}}.analysis-scroll{{overflow:auto;max-width:100%}}.analysis-table{{width:100%;border-collapse:collapse;table-layout:fixed;font-size:11px}}.analysis-table th,.analysis-table td{{padding:6px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}}.analysis-table th{{color:var(--muted);font-weight:800;white-space:nowrap}}.analysis-table .anum{{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}}.analysis-pattern-link{{font-weight:850;color:var(--slot);text-decoration:none}}.analysis-pattern-link:hover{{text-decoration:underline}}.pattern-reference{{cursor:pointer}}.pattern-hover-preview{{position:fixed;z-index:9999;display:none;width:300px;max-width:min(300px,calc(100vw - 24px));padding:8px;background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:0 10px 34px rgba(0,0,0,.24);pointer-events:none}}.pattern-hover-preview.visible{{display:block}}.pattern-hover-preview .hover-title{{font-size:11px;font-weight:850;margin:0 0 5px;color:var(--text)}}.pattern-hover-preview svg{{display:block;width:100%;height:auto;background:var(--panel);border-radius:7px}}.col-pattern{{width:76px}}.col-count{{width:62px}}.col-pct{{width:62px}}.col-bars{{width:auto}}.col-nextcount{{width:78px}}.col-successors{{width:auto}}.col-base{{width:145px}}.col-sim{{width:82px}}.col-diff{{width:auto}}.col-family{{width:78px}}.col-rep{{width:105px}}.col-members{{width:180px}}.col-parent{{width:170px}}.col-orn{{width:145px}}.family-name{{font-weight:850;white-space:nowrap}}.bars-cell,.variation-cell{{overflow-wrap:anywhere;line-height:1.45}}.transition-chip{{display:inline-block;margin:1px 5px 2px 0;padding:2px 6px;border:1px solid var(--line);border-radius:999px;white-space:nowrap;background:var(--bg)}}.transition-chip small{{color:var(--muted)}}.transition-chip.self-transition{{background:#dbeafe;border-color:#60a5fa;color:#1e3a8a;font-weight:800}}@media(prefers-color-scheme:dark){{.transition-chip.self-transition{{background:#18324f;border-color:#60a5fa;color:#bfdbfe}}}}.analysis-muted{{color:var(--muted)}}.sequence-strip{{display:flex;flex-wrap:wrap;gap:5px;align-items:center}}.sequence-run{{display:inline-block;padding:3px 7px;border:1px solid var(--line);border-radius:6px;text-decoration:none;font-size:11px;font-weight:800}}.pattern-run{{color:var(--slot);background:var(--bg)}}.gap-run{{color:var(--muted);font-weight:650;border-style:dashed}}@media(max-width:900px){{.analysis-grid{{grid-template-columns:1fr}}}}
+.pattern-analysis{{margin:0 12px 16px;display:grid;grid-template-columns:1fr;gap:12px;max-width:{sw}px}}.sequence-transition-grid{{display:grid;grid-template-columns:minmax(0,1fr) minmax(430px,.92fr);gap:12px;align-items:stretch}}.analysis-grid{{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.25fr);gap:12px}}.analysis-panel{{background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:12px 14px;min-width:0}}.analysis-panel h2{{margin:0 0 4px;font-size:15px}}.analysis-note{{margin:0 0 9px;color:var(--muted);font-size:11px;line-height:1.45}}.analysis-scroll{{overflow:auto;max-width:100%}}.analysis-table{{width:100%;border-collapse:collapse;table-layout:fixed;font-size:11px}}.analysis-table th,.analysis-table td{{padding:6px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}}.analysis-table th{{color:var(--muted);font-weight:800;white-space:nowrap}}.analysis-table .anum{{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}}.analysis-pattern-link{{font-weight:850;color:var(--slot);text-decoration:none}}.analysis-pattern-link:hover{{text-decoration:underline}}.pattern-reference{{cursor:pointer}}.pattern-hover-preview{{position:fixed;z-index:9999;display:none;width:300px;max-width:min(300px,calc(100vw - 24px));padding:8px;background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:0 10px 34px rgba(0,0,0,.24);pointer-events:none}}.pattern-hover-preview.visible{{display:block}}.pattern-hover-preview .hover-title{{font-size:11px;font-weight:850;margin:0 0 5px;color:var(--text)}}.pattern-hover-preview svg{{display:block;width:100%;height:auto;background:var(--panel);border-radius:7px}}.col-pattern{{width:76px}}.col-count{{width:62px}}.col-pct{{width:62px}}.col-bars{{width:auto}}.col-nextcount{{width:78px}}.col-successors{{width:auto}}.col-base{{width:145px}}.col-sim{{width:82px}}.col-diff{{width:auto}}.col-family{{width:78px}}.col-rep{{width:105px}}.col-members{{width:180px}}.col-parent{{width:170px}}.col-orn{{width:145px}}.family-name{{font-weight:850;white-space:nowrap}}.bars-cell,.variation-cell{{overflow-wrap:anywhere;line-height:1.45}}.transition-chip{{display:inline-block;margin:1px 5px 2px 0;padding:2px 6px;border:1px solid var(--line);border-radius:999px;white-space:nowrap;background:var(--bg)}}.transition-chip small{{color:var(--muted)}}.transition-chip.self-transition{{background:#dbeafe;border-color:#60a5fa;color:#1e3a8a;font-weight:800}}@media(prefers-color-scheme:dark){{.transition-chip.self-transition{{background:#18324f;border-color:#60a5fa;color:#bfdbfe}}}}.analysis-muted{{color:var(--muted)}}.sequence-strip{{display:flex;flex-wrap:wrap;gap:5px;align-items:center}}.sequence-run{{display:inline-block;padding:3px 7px;border:1px solid var(--line);border-radius:6px;text-decoration:none;font-size:11px;font-weight:800}}.pattern-run{{color:var(--slot);background:var(--bg)}}.gap-run{{color:var(--muted);font-weight:650;border-style:dashed}}.transition-graph-panel{{overflow:hidden}}.transition-graph-toolbar{{display:flex;gap:10px;align-items:center;justify-content:space-between;margin:-2px 0 4px;font-size:10px;color:var(--muted)}}.transition-graph-toolbar label{{display:flex;align-items:center;gap:5px;font-weight:750}}.transition-graph-filter{{font:inherit;color:var(--text);background:var(--bg);border:1px solid var(--line);border-radius:5px;padding:2px 5px}}.transition-graph-legend{{text-align:right}}.transition-graph{{display:block;width:100%;height:auto;max-height:410px;overflow:visible;touch-action:none}}.transition-edge{{stroke:var(--muted);opacity:.42;transition:opacity .12s ease}}.transition-edge.repeated-edge{{stroke:var(--slot);opacity:.62}}.transition-edge.self-edge{{stroke:#3b82f6;opacity:.72}}.transition-arrowhead{{fill:var(--muted)}}.transition-edge-label{{font-size:9px;font-weight:800;text-anchor:middle;paint-order:stroke;stroke:var(--panel);stroke-width:3px;stroke-linejoin:round;fill:var(--muted)}}.transition-node{{cursor:grab}}.transition-node.is-dragging{{cursor:grabbing}}.transition-node circle{{fill:var(--panel);stroke:var(--slot);stroke-width:1.6;vector-effect:non-scaling-stroke;transition:stroke-width .12s ease,fill .12s ease}}.transition-node text{{font-size:9px;font-weight:850;text-anchor:middle;fill:var(--text);pointer-events:none}}.transition-node:hover circle{{stroke-width:3;fill:var(--bg)}}.transition-edge.is-filtered,.transition-edge-label.is-filtered{{display:none}}@media(max-width:1050px){{.sequence-transition-grid{{grid-template-columns:1fr}}}}@media(max-width:900px){{.analysis-grid{{grid-template-columns:1fr}}}}
 #print-gallery{{display:none}}
 @media screen{{
   #matrix,#matrix-preview{{max-width:none}}
@@ -1430,7 +1658,9 @@ def render(path,mid,bars_,bb,skipped_leading_bars=0):
   .print-card svg{{display:block;width:220px!important;max-width:220px!important;height:auto!important;cursor:default!important}}
   .print-card .bg{{fill:#fff!important}}
   .pattern-analysis{{margin:0!important;max-width:none!important;gap:3mm!important}}
-  .analysis-grid{{grid-template-columns:1fr!important;gap:3mm!important}}
+  .sequence-transition-grid,.analysis-grid{{grid-template-columns:1fr!important;gap:3mm!important}}
+  .transition-graph-toolbar{{display:none!important}}
+  .transition-graph{{max-height:85mm!important}}
   .analysis-panel{{padding:2.5mm!important;border-radius:2mm!important;box-shadow:none!important}}
   .analysis-panel h2{{font-size:10pt!important;break-after:avoid-page}}
   .analysis-note{{font-size:7.5pt!important;margin-bottom:1.5mm!important}}
@@ -1446,7 +1676,7 @@ def render(path,mid,bars_,bb,skipped_leading_bars=0):
 <div class="summary" title="{header_summary}">{header_summary}</div>
 <div class="header-actions"><div class="tool-groups"><div class="tool-group"><span class="tool-label">View</span><button id="toggle">RAW / QUANTIZED</button><button id="slot-display" type="button" class="quantized-only">Velocity / Accent</button></div><div class="tool-group"><span class="tool-label">Export</span><button id="download-csv" type="button">CSV</button><button id="print-report" type="button">Print / PDF</button></div><span id="number-status"></span></div><div class="service-area"><span id="service-dot" class="service-dot"></span><span id="service-text" class="service-text">Checking playback service…</span><details class="legend-panel"><summary>Legend ▾</summary><div class="legend-content"><div>Velocity: <i class="lg v0"></i>0 (1–31) <i class="lg v1"></i>1 (32–63) <i class="lg v2"></i>2 (64–95) <i class="lg v3"></i>3 (96–127)</div><div>ADX 6-accent: {accent_legend}</div><div>RAW notes: <i class="lg" style="background:#2563eb"></i>original MIDI note-on; deviation is not color-coded</div><div>RAW: <i class="lg" style="border:2px solid #d32f2f"></i>ORN flam grace · <i class="lg" style="background:#2563eb;border:2px solid #d32f2f"></i>off-grid, omitted from GRID · red label = outside SLOT_MAP</div></div></details></div></div>
 <div class="global-correction"><strong>Grid correction</strong><label>Grid <select id="global-grid"><option value="16">16</option><option value="32">32</option><option value="8T">8T</option><option value="16T">16T</option></select></label><label>Tol. <select id="global-tolerance"><option value="1">±1 tick</option><option value="2">±2 ticks</option><option value="3">±3 ticks</option></select></label><span id="correction-result" class="correction-result"></span><button id="preview-corrected-midi" type="button">Preview</button><button id="save-corrected-midi" type="button">Save corrected MIDI…</button></div>
-</header><div id="genre-modal-backdrop" class="genre-modal-backdrop" hidden><div class="genre-modal" role="dialog" aria-modal="true" aria-labelledby="genre-modal-title"><h2 id="genre-modal-title">Select genre</h2><p>The filename did not identify a genre, so PatternLab fell back to DRM. Type a 3-character genre code to apply to all pattern cards.</p><label>Genre code <input id="genre-modal-code" type="text" inputmode="text" maxlength="3" placeholder="e.g. SKA" autocomplete="off"/></label><p class="genre-modal-hint">Enter a 3-character genre code. It will be added to every card for this report.</p><div class="genre-modal-actions"><button id="genre-modal-apply" type="button">Apply to all cards</button></div></div></div><main><svg id="matrix" xmlns="http://www.w3.org/2000/svg" width="{sw}" height="{sh}" viewBox="0 0 {sw} {sh}">{body_html}</svg><svg id="matrix-preview" xmlns="http://www.w3.org/2000/svg" style="display:none"></svg></main><section id="print-gallery" aria-hidden="true"></section>{analysis_html}<details><summary>Analysis notes</summary><p>Each block is checked only against earlier blocks in the same MIDI file. Pattern identity is checked after SLOT_MAP abstraction, using relative onset tick and abstract slot; velocity and note duration are ignored. Notes outside the selected map retain raw-note identity. Repeated source bars keep the same Pattern number but are omitted from the card gallery; their occurrence count and source bars are summarized in the representative card and analysis table. When raw GM notes differ but collapse to the same abstract slots, the card and CSV describe the raw-note variant.</p><p>Trailing empty bars are discarded from the one-bar pattern stream. A final musical bar containing only one onset group at its beginning is labeled ENDING HIT and excluded from the pattern catalog.</p><p>Each card initially uses the automatically detected resolution. Its own Resolution selector can immediately switch the reference grid and SLOT quantization among 16, 32, 8T, and 16T without affecting other cards. Reloading the HTML restores the original automatic selections. Grid fit is a separate visual diagnostic: for each candidate grid it reports the percentage of RAW note-on events that fall within 5% of one grid step from the nearest line. Best marks the highest such percentage, with mean normalized error used only to break ties. It does not overwrite the shared rhythm-analysis decision.</p><p>If no SLOT_MAP covers every note, the nearest map is used, the card receives a red border, and uncovered MIDI notes are listed as MISSING NOTES. Ties fall back conservatively toward lower IDs, beginning with LEGACY 12.</p><p>RAW view places every note-on circle at its original MIDI tick position and extends a horizontal line to the recorded note-off position. Very short durations receive a two-pixel minimum display line; the note-on position itself is never moved. The vertical subdivision lines are reference overlays only; changing a card’s Resolution selector never moves RAW notes. Velocity controls circle size. RAW note color is uniform blue and does not encode distance from the selected grid; the existing deviation classes are retained only for internal diagnostics. Notes that currently trigger automatic ORN candidacy use the same blue fill as ordinary RAW notes and are distinguished only by a red outline: removable grace notes of detected flam pairs. Very weak hits (velocity ≤ 30) are a 6-accent strength diagnostic only and do not trigger ORN candidacy. Ordinary off-grid notes that are omitted from the selected GRID resolution keep their RAW fill color, receive a red outline, and show the grid omission reason on hover. Hovering a purple note shows the exact reason, including velocity threshold or flam confidence, tick gap, threshold, and whether the grace is removed from subdivision. Flam main hits remain blue because they stay in the ADX grid.</p><p>The Play button sends MIDI generated from the current Compare Mode directly to the local PatternLab playback service at <code>127.0.0.1:8123</code>, which uses the configured FluidSynth executable and SF2 SoundFont. The GRID display button switches between the original four-band MIDI Velocity view and the ADX 6-accent preview. Each non-duplicate card can play either RAW only or RAW → Quantized. Every included section is repeated twice, and adjacent sections are separated by one quarter-note beat. Quantized playback uses the five playable levels of the JSON-defined 6-accent scheme. The displayed symbol, label, velocity range, and representative velocity come from accent_levels.json; an empty cell represents Rest. Flam grace notes marked for removal from subdivision are intentionally omitted there and belong to ORN; the main hit remains in the grid. Very weak hits remain regular GRID hits when they lie exactly on the selected grid. Only note-ons that already lie exactly on the selected grid are shown in SLOT view; off-grid note-ons are never snapped into a cell. When multiple retained on-grid hits occupy one slot/cell, the strongest velocity is shown.</p><p><strong>Global grid correction</strong> is an explicit optional preprocessing step. It can move only channel-10 note onsets that are within ±1, ±2, or ±3 ticks of the selected whole-song 16/32/8T/16T grid. A paired note-off is moved by the same amount so duration is preserved. Events farther from the grid are left untouched. The report previews how many onsets would change. Preview corrected re-runs PatternLab on the proposed corrected MIDI without modifying the source file. Hits that cross a one-bar boundary therefore move into the next pattern card, and duplicate/unique cards and pattern numbers are recalculated from the corrected timing. In corrected preview, duplicate/unique status is recalculated from the corrected timing. Corrected-preview duplicate bars are omitted from the gallery; only representative one-bar patterns remain, while their frequencies are preserved by the re-analysis. The button toggles back to the untouched original report. Save corrected MIDI downloads a separate corrected file, and the source MIDI is never overwritten.</p><p>SLOT_MAP usage: <code>{html.escape(json.dumps(summary,ensure_ascii=False))}</code></p><p>The shared adc_rhythm_analysis module owns the complete subdivision decision: flam detection, grace-note exclusion, onset phase, note-duration evidence, and conservative filename hints. The same flam-filtered events are used for both phase and duration scoring. Beat anchors and the shared half-beat remain excluded from phase evidence.</p></details><script>(()=>{{
+</header><div id="genre-modal-backdrop" class="genre-modal-backdrop" hidden><div class="genre-modal" role="dialog" aria-modal="true" aria-labelledby="genre-modal-title"><h2 id="genre-modal-title">Select genre</h2><p>The filename did not identify a genre, so PatternLab fell back to DRM. Type a 3-character genre code to apply to all pattern cards.</p><label>Genre code <input id="genre-modal-code" type="text" inputmode="text" maxlength="3" placeholder="e.g. SKA" autocomplete="off"/></label><p class="genre-modal-hint">Enter a 3-character genre code. It will be added to every card for this report.</p><div class="genre-modal-actions"><button id="genre-modal-apply" type="button">Apply to all cards</button></div></div></div><main><svg id="matrix" xmlns="http://www.w3.org/2000/svg" width="{sw}" height="{sh}" viewBox="0 0 {sw} {sh}">{body_html}</svg><svg id="matrix-preview" xmlns="http://www.w3.org/2000/svg" style="display:none"></svg></main><section id="print-gallery" aria-hidden="true"></section>{analysis_html}<details><summary>Analysis notes</summary><p>Each block is checked only against earlier blocks in the same MIDI file. Pattern identity is checked after SLOT_MAP abstraction, using relative onset tick and abstract slot; velocity and note duration are ignored. Notes outside the selected map retain raw-note identity. Repeated source bars keep the same Pattern number but are omitted from the card gallery; their occurrence count and source bars are summarized in the representative card and analysis table. When raw GM notes differ but collapse to the same abstract slots, the card and CSV describe the raw-note variant.</p><p>Trailing empty bars are discarded from the one-bar pattern stream. A final musical bar containing only one onset group at its beginning is labeled ENDING HIT and excluded from the pattern catalog.</p><p>Each card initially uses the automatically detected resolution. Its own Resolution selector can immediately switch the reference grid and SLOT quantization among 16, 32, 8T, and 16T without affecting other cards. Reloading the HTML restores the original automatic selections. Grid fit is a separate visual diagnostic: for each candidate grid it reports the percentage of RAW note-on events that fall within 5% of one grid step from the nearest line. Best marks the highest such percentage, with mean normalized error used only to break ties. It does not overwrite the shared rhythm-analysis decision.</p><p>If no SLOT_MAP covers every note, the nearest map is used, the card receives a red border, and uncovered MIDI notes are listed as MISSING NOTES. Ties fall back conservatively toward lower IDs, beginning with LEGACY 12.</p><p>RAW view places every note-on circle at its original MIDI tick position and extends a horizontal line to the recorded note-off position. Very short durations receive a two-pixel minimum display line; the note-on position itself is never moved. The vertical subdivision lines are reference overlays only; changing a card’s Resolution selector never moves RAW notes. Velocity controls circle size. RAW note color is uniform blue and does not encode distance from the selected grid; the existing deviation classes are retained only for internal diagnostics. Notes that currently trigger automatic ORN candidacy use the same blue fill as ordinary RAW notes and are distinguished only by a red outline: removable grace notes of detected flam pairs. Very weak hits (velocity ≤ 30) are a 6-accent strength diagnostic only and do not trigger ORN candidacy. Ordinary off-grid notes that are omitted from the selected GRID resolution keep their RAW fill color, receive a red outline, and show the grid omission reason on hover. Hovering a purple note shows the exact reason, including velocity threshold or flam confidence, tick gap, threshold, and whether the grace is removed from subdivision. Flam main hits remain blue because they stay in the ADX grid.</p><p>The Play button sends MIDI generated from the current Compare Mode directly to the local PatternLab playback service at <code>127.0.0.1:8123</code>, which uses the configured FluidSynth executable and SF2 SoundFont. The GRID display button switches between the original four-band MIDI Velocity view and the ADX 6-accent preview. Each non-duplicate card can play either RAW only or RAW → Quantized. Every included section is repeated twice, and adjacent sections are separated by one quarter-note beat. Quantized playback uses the five playable levels of the JSON-defined 6-accent scheme. The displayed symbol, label, velocity range, and representative velocity come from accent_levels.json; an empty cell represents Rest. Flam grace notes marked for removal from subdivision are intentionally omitted there and belong to ORN; the main hit remains in the grid. Very weak hits remain regular GRID hits when they lie exactly on the selected grid. Only note-ons that already lie exactly on the selected grid are shown in SLOT view; off-grid note-ons are never snapped into a cell. When multiple retained on-grid hits occupy one slot/cell, the strongest velocity is shown.</p><p><strong>Global grid correction</strong> is an explicit optional preprocessing step. It can move only channel-10 note onsets that are within ±1, ±2, or ±3 ticks of the selected whole-song 16/32/8T/16T grid. A paired note-off is moved by the same amount so duration is preserved. Events farther from the grid are left untouched. The report previews how many onsets would change. Preview corrected re-runs PatternLab on the proposed corrected MIDI without modifying the source file. Hits that cross a one-bar boundary therefore move into the next pattern card, and duplicate/unique cards and pattern numbers are recalculated from the corrected timing. In corrected preview, duplicate/unique status is recalculated from the corrected timing. Corrected-preview duplicate bars are omitted from the gallery; only representative one-bar patterns remain, while their frequencies are preserved by the re-analysis. The button toggles back to the untouched original report. Save corrected MIDI downloads a separate corrected file, and the source MIDI is never overwritten.</p><p><strong>Pattern Transition Graph</strong> folds the actual one-bar song path into directed pattern-to-pattern relations. Node size reflects pattern occurrences and edge width reflects observed transition count. The graph layout always uses all observed transitions. All edges are shown by default; the selector can reduce the view to repeated edges only or suppress self-transitions. Graph nodes reuse the same hover preview and RAW click playback as other analysis references.</p><p>SLOT_MAP usage: <code>{html.escape(json.dumps(summary,ensure_ascii=False))}</code></p><p>The shared adc_rhythm_analysis module owns the complete subdivision decision: flam detection, grace-note exclusion, onset phase, note-duration evidence, and conservative filename hints. The same flam-filtered events are used for both phase and duration scoring. Beat anchors and the shared half-beat remain excluded from phase evidence.</p></details><script>(()=>{{
 const s=document.getElementById('matrix'),previewSvg=document.getElementById('matrix-preview'),m=document.getElementById('mode'),slotDisplay=document.getElementById('slot-display');slotDisplay.style.display='none';
 const BLOCK_DATA={block_data_json};
 const printGallery=document.getElementById('print-gallery');
@@ -1677,13 +1907,90 @@ function bindPatternReferences(root=document){{
     ref.addEventListener('mouseleave',hidePatternHover);
     ref.addEventListener('click',async e=>{{
       e.preventDefault();e.stopPropagation();hidePatternHover();
+      if(ref.dataset.dragMoved==='1')return;
       const panel=patternPanel(ref.dataset.jumpBlock);
       if(!panel)return;
       await playAnalysisRaw(panel);
     }});
   }});
 }}
+function transitionNodeByPattern(svg,pattern){{
+  return svg.querySelector(`.transition-node[data-pattern="${{pattern}}"]`);
+}}
+function transitionNodeGeom(svg,pattern){{
+  const node=transitionNodeByPattern(svg,pattern);if(!node)return null;
+  const circle=node.querySelector('circle');if(!circle)return null;
+  return {{node,circle,x:Number(circle.getAttribute('cx')||0),y:Number(circle.getAttribute('cy')||0),r:Number(circle.getAttribute('r')||9)}};
+}}
+function updateTransitionGraphEdges(svg){{
+  svg.querySelectorAll('.transition-edge').forEach(edge=>{{
+    const a=edge.dataset.source,b=edge.dataset.target;
+    const A=transitionNodeGeom(svg,a),B=transitionNodeGeom(svg,b);if(!A||!B)return;
+    if(a===b){{
+      const side=(Number(a)%2)?-1:1,r=A.r,x=A.x,y=A.y;
+      const d=`M ${{(x+side*r*.45).toFixed(1)}} ${{(y-r*.78).toFixed(1)}} C ${{(x+side*r*2.35).toFixed(1)}} ${{(y-r*2.55).toFixed(1)}}, ${{(x+side*r*2.65).toFixed(1)}} ${{(y+r*1.10).toFixed(1)}}, ${{(x+side*r*.82).toFixed(1)}} ${{(y+r*.46).toFixed(1)}}`;
+      edge.setAttribute('d',d);
+      const label=svg.querySelector(`.transition-edge-label[data-source="${{a}}"][data-target="${{b}}"]`);
+      if(label){{label.setAttribute('x',String(x+side*r*2.18));label.setAttribute('y',String(y-r*.98));}}
+      return;
+    }}
+    const dx=B.x-A.x,dy=B.y-A.y,dist=Math.max(1,Math.hypot(dx,dy)),ux=dx/dist,uy=dy/dist;
+    const sx=A.x+ux*(A.r+2),sy=A.y+uy*(A.r+2),ex=B.x-ux*(B.r+5),ey=B.y-uy*(B.r+5);
+    const px=-uy,py=ux,bend=Number(edge.dataset.bend||0);
+    const mx=(sx+ex)/2+px*bend,my=(sy+ey)/2+py*bend;
+    edge.setAttribute('d',`M ${{sx.toFixed(1)}} ${{sy.toFixed(1)}} Q ${{mx.toFixed(1)}} ${{my.toFixed(1)}} ${{ex.toFixed(1)}} ${{ey.toFixed(1)}}`);
+    const label=svg.querySelector(`.transition-edge-label[data-source="${{a}}"][data-target="${{b}}"]`);
+    if(label){{label.setAttribute('x',String(mx));label.setAttribute('y',String(my-3));}}
+  }});
+}}
+function bindTransitionNodeDragging(root=document){{
+  root.querySelectorAll('svg.transition-graph').forEach(svg=>{{
+    if(svg.dataset.dragBound==='1')return;svg.dataset.dragBound='1';
+    svg.querySelectorAll('.transition-node[data-pattern]').forEach(node=>{{
+      let dragging=false,moved=false,pointerId=null,offsetX=0,offsetY=0;
+      const point=e=>{{const pt=svg.createSVGPoint();pt.x=e.clientX;pt.y=e.clientY;return pt.matrixTransform(svg.getScreenCTM().inverse());}};
+      node.addEventListener('pointerdown',e=>{{
+        if(e.button!==0)return;e.preventDefault();e.stopPropagation();hidePatternHover();
+        const p=point(e),circle=node.querySelector('circle');if(!circle)return;
+        offsetX=p.x-Number(circle.getAttribute('cx'));offsetY=p.y-Number(circle.getAttribute('cy'));
+        dragging=true;moved=false;pointerId=e.pointerId;node.classList.add('is-dragging');node.setPointerCapture(pointerId);
+      }});
+      node.addEventListener('pointermove',e=>{{
+        if(!dragging||e.pointerId!==pointerId)return;e.preventDefault();
+        const p=point(e),circle=node.querySelector('circle'),text=node.querySelector('text');if(!circle||!text)return;
+        const r=Number(circle.getAttribute('r')||9),vb=svg.viewBox.baseVal;
+        const x=Math.max(vb.x+r+4,Math.min(vb.x+vb.width-r-4,p.x-offsetX));
+        const y=Math.max(vb.y+r+4,Math.min(vb.y+vb.height-r-4,p.y-offsetY));
+        if(Math.hypot(x-Number(circle.getAttribute('cx')),y-Number(circle.getAttribute('cy')))>1)moved=true;
+        circle.setAttribute('cx',String(x));circle.setAttribute('cy',String(y));
+        text.setAttribute('x',String(x));text.setAttribute('y',String(y+3.4));
+        node.dataset.x=String(x);node.dataset.y=String(y);updateTransitionGraphEdges(svg);
+      }});
+      const finish=e=>{{
+        if(!dragging)return;dragging=false;node.classList.remove('is-dragging');
+        if(pointerId!==null&&node.hasPointerCapture(pointerId))node.releasePointerCapture(pointerId);
+        node.dataset.dragMoved=moved?'1':'0';setTimeout(()=>{{node.dataset.dragMoved='0';}},0);pointerId=null;
+      }};
+      node.addEventListener('pointerup',finish);node.addEventListener('pointercancel',finish);
+    }});
+  }});
+}}
+function applyTransitionGraphFilter(select){{
+  const panel=select.closest('.transition-graph-panel');if(!panel)return;
+  const mode=select.value||'repeated';
+  panel.querySelectorAll('.transition-edge,.transition-edge-label').forEach(el=>{{
+    const count=Number(el.dataset.transitionCount||0);
+    const self=el.dataset.self==='1';
+    const hide=(mode==='repeated'&&count<2)||(mode==='no-self'&&self);
+    el.classList.toggle('is-filtered',hide);
+  }});
+}}
+document.querySelectorAll('.transition-graph-filter').forEach(select=>{{
+  select.addEventListener('change',()=>applyTransitionGraphFilter(select));
+  applyTransitionGraphFilter(select);
+}});
 bindPatternReferences();
+bindTransitionNodeDragging();
 function csvCell(value){{const x=String(value??'');return /[",\\n]/.test(x)?'"'+x.replace(/"/g,'""')+'"':x}}
 function writeU16(a,v){{a.push((v>>8)&255,v&255)}}
 function writeU32(a,v){{a.push((v>>>24)&255,(v>>>16)&255,(v>>>8)&255,v&255)}}
