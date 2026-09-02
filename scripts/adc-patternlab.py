@@ -17,7 +17,7 @@ from adc_rhythm_analysis import (
     SUPPORTED_RESOLUTIONS, analyze_event_rhythm, detect_flams,
 )
 
-SCRIPT_NAME="adc-patternlab.py"; VERSION="260829p"; VERSION_TEXT=f"{SCRIPT_NAME} {VERSION}"
+SCRIPT_NAME="adc-patternlab.py"; VERSION="260902h"; VERSION_TEXT=f"{SCRIPT_NAME} {VERSION}"
 VERY_WEAK_HIT_MAX_VELOCITY=30
 if tuple(SUPPORTED_RESOLUTIONS) != ("16", "32", "8T", "16T"):
     raise RuntimeError(
@@ -778,9 +778,10 @@ def card_controls(path, b, x, y, w=430, disabled=False):
 <label class="number-label">No. <input class="start-number" type="text" inputmode="numeric" maxlength="4" placeholder="start" aria-label="Starting pattern number"{dis}/></label>
 </div>
 <output class="name-preview" aria-live="polite"></output>
-<div class="timing-fit" title="{html.escape(fit_title)}"><strong>Grid fit</strong> {fit_html}<span class="fit-best">Best {fit["best"]}</span></div>
+<div class="timing-fit" title="{html.escape(fit_title)}"><button type="button" class="grid-fit-cycle" title="Cycle this card's reference grid: 16 → 32 → 8T → 16T">Grid fit</button> {fit_html}<span class="fit-best">Best {fit["best"]}</span></div>
 <div class="playback-box">
 <button class="play-compare" type="button"{dis}>▶ Play</button>
+<button class="save-pattern" type="button"{dis}>Save pattern</button>
 <div class="playback-settings">
 <label>Resolution <select class="subdivision-select" title="analysis confidence {html.escape(str(b.subdiv.get("confidence", "")))}"{dis}>{subdivision_options}</select></label>
 <label class="compare-mode-label" title="Playback mode for this card">Mode <select class="compare-mode-select"{dis} aria-label="Playback mode"><option value="raw" selected>RAW</option><option value="quantized">RAW → QTZ</option></select></label>
@@ -981,6 +982,48 @@ def _render_card_body(path: Path, bb, expand_duplicates: bool = False):
         body.append(rendered)
     return "".join(body),sw,sh
 
+def _playback_block_data(mid: MidiFile, bb) -> dict:
+    """Build the per-card payload used by browser-side RAW/QTZ playback."""
+    block_data={}
+    for b in bb:
+        if not b.events or b.ending_hit:
+            continue
+        flam_analysis=detect_flams(
+            b.events,b.subdiv.get("tpq",1),
+            loop_ticks=b.end-b.start,loop_start=b.start,
+            selected_resolution=b.subdiv.get("provisional_resolution", b.subdiv.get("resolution")),
+        )
+        excluded=set()
+        ornament_meta={}
+        for item in flam_analysis.get("flams",[]):
+            if item.get("remove_from_subdivision") and "grace_index" in item:
+                grace_index=int(item["grace_index"])
+                excluded.add(grace_index)
+                ornament_meta[grace_index]={
+                    "kind":"FLAM",
+                    "main_tick":int(item.get("main_tick", b.start))-b.start,
+                    "family":str(item.get("family", "")),
+                    "confidence":str(item.get("confidence", "")),
+                    "across_loop":bool(item.get("across_loop")),
+                }
+        block_data[str(b.no)]={
+            "duration":max(1,b.end-b.start),
+            "tempo":tempo_at_tick(mid,b.start),
+            "meter":[b.bars[0].num,b.bars[0].den],
+            "events":[
+                {"tick":e.tick-b.start,"note":e.note,"vel":e.vel,"dur":e.dur,"excluded":i in excluded,"orn":ornament_meta.get(i)}
+                for i,e in enumerate(b.events)
+            ],
+            "slot_map_id":b.smap.id,
+            "slot_map_name":b.smap.name,
+            "slots":[
+                {"label":slot.label,"notes":list(slot.notes),"representative":slot.representative}
+                for slot in b.smap.slots
+            ],
+        }
+    return block_data
+
+
 def _corrected_preview_payload(path: Path, mid: MidiFile, resolution: str, tolerance: int, skipped_leading_bars: int = 0) -> dict:
     """Re-analyze corrected timing so boundary moves and duplicate cards are real."""
     data,_summary=_corrected_midi_bytes(mid,resolution,tolerance)
@@ -995,6 +1038,7 @@ def _corrected_preview_payload(path: Path, mid: MidiFile, resolution: str, toler
     # from corrected timing; the gallery then shows only representative patterns.
     body,sw,sh=_render_card_body(path,bb,expand_duplicates=False)
     return {"body":body,"width":sw,"height":sh,
+            "block_data":_playback_block_data(corrected_mid,bb),
             "unique_patterns":sum(1 for b in bb if b.events and not b.ending_hit and b.duplicate_of is None),
             "duplicates":sum(1 for b in bb if b.duplicate_of is not None),
             "blocks":len(bb),
@@ -1079,8 +1123,13 @@ def _condensed_sequence_html(bb, first_block):
         p=run["token"]; repeat=f' ×{run["count"]}' if run["count"]>1 else ""
         bars=str(run["start"]) if run["start"]==run["end"] else f'{run["start"]}–{run["end"]}'
         pieces.append(
+            f'<span class="sequence-run-wrap">'
             f'<a class="sequence-run pattern-run pattern-reference" href="#" data-jump-block="{first_block.get(p,"")}" '
+            f'data-start-bar="{run["start"]}" data-end-bar="{run["end"]}" '
             f'title="source bar(s) {bars}">P{p:03d}{repeat}</a>'
+            f'<button class="sequence-play-from" type="button" data-start-bar="{run["start"]}" '
+            f'title="Play source MIDI from bar {run["start"]}" aria-label="Play source MIDI from bar {run["start"]}">▸</button>'
+            f'</span>'
         )
     return "".join(pieces) or '<span class="analysis-muted">No pattern sequence.</span>'
 
@@ -1438,7 +1487,7 @@ def _transition_graph_html(counts, transitions, first_block):
         x,y=positions[p]; r=radii[p]
         node_parts.append(
             f'<a class="transition-node pattern-reference" href="#" data-jump-block="{first_block.get(p,"")}" data-pattern="{p}" data-x="{x:.1f}" data-y="{y:.1f}" data-r="{r:.1f}" '
-            f'aria-label="Pattern P{p:03d}, {counts.get(p,0)} occurrence(s)">'
+            f'data-count="{counts.get(p,0)}" aria-label="Pattern P{p:03d}, {counts.get(p,0)} occurrence(s)">'
             f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{r:.1f}"/>'
             f'<text x="{x:.1f}" y="{y+3.4:.1f}">P{p:03d}</text>'
             f'<title>P{p:03d} · {counts.get(p,0)} occurrence(s) · hover: preview · click: RAW play</title>'
@@ -1452,6 +1501,7 @@ def _transition_graph_html(counts, transitions, first_block):
         '<option value="repeated">Repeated only</option>'
         '<option value="no-self">Hide self</option>'
         '</select></label>'
+        '<span class="transition-export-actions"><button class="transition-export-svg" type="button" title="Export the current graph exactly as shown, without pattern grids">Export SVG</button><button class="transition-export-cards" type="button" title="Export each minimal pattern card as a high-resolution PNG inside a ZIP archive">Cards ZIP</button></span>'
         '<span class="transition-graph-legend">force-directed · drag nodes to inspect links · layout uses all transitions · node size = occurrences · edge width = count</span>'
         '</div>'
         f'<svg class="transition-graph" viewBox="0 0 {width} {height}" role="img" '
@@ -1555,6 +1605,7 @@ def _pattern_analysis_html(bb):
         '<div class="sequence-transition-grid">'
         '<div class="analysis-panel sequence-panel"><h2>Condensed Bar Sequence</h2>'
         '<p class="analysis-note">Consecutive repetitions are collapsed as Pxxx ×N. Duplicate bars omitted from the gallery remain visible here as repeat counts. Hover a pattern reference to preview its grid; click it to play the original RAW pattern directly.</p>'
+        '<div class="song-transport" aria-label="Source MIDI transport"><button id="song-play" type="button">▶ Song</button><button id="song-stop" type="button" disabled>■ Stop</button><div class="song-progress" aria-hidden="true"><span></span></div><span id="song-position" class="song-position">0:00 / 0:00</span><span id="song-now" class="song-now">—</span></div>'
         '<div class="sequence-strip">'+sequence_html+'</div></div>'
         '<div class="analysis-panel transition-graph-panel"><h2>Pattern Transition Graph</h2>'
         '<p class="analysis-note">The fixed song path folded into observed Pxxx → Pxxx relations. Empty/ending bars break the chain. Hover a node to preview its pattern; click it for RAW playback.</p>'
@@ -1595,22 +1646,7 @@ def render(path,mid,bars_,bb,skipped_leading_bars=0):
     header_parts.extend(embedded_header_metadata(mid))
     header_parts.extend([f"{len(bars_)} bar(s)",f"{len(bb)} one-bar block(s)",f"unique patterns {unique_count}",f"duplicates {duplicate_count}",f"ending hits {ending_count}",f"empty blocks {empty_count}",f"CH10 notes: {', '.join(map(str,notes)) or '(none)'}"])
     header_summary=html.escape(" · ".join(header_parts))
-    block_data={}
-    for b in bb:
-        if not b.events or b.ending_hit:
-            continue
-        flam_analysis=detect_flams(b.events,b.subdiv.get("tpq",1),loop_ticks=b.end-b.start,loop_start=b.start,selected_resolution=b.subdiv.get("provisional_resolution", b.subdiv.get("resolution")))
-        excluded=set()
-        for item in flam_analysis.get("flams",[]):
-            if item.get("remove_from_subdivision") and "grace_index" in item:
-                excluded.add(int(item["grace_index"]))
-        block_data[str(b.no)]={
-            "duration":max(1,b.end-b.start),
-            "tempo":tempo_at_tick(mid,b.start),
-            "meter":[b.bars[0].num,b.bars[0].den],
-            "events":[{"tick":e.tick-b.start,"note":e.note,"vel":e.vel,"dur":e.dur,"excluded":i in excluded} for i,e in enumerate(b.events)],
-            "slots":[{"label":slot.label,"notes":list(slot.notes),"representative":slot.representative} for slot in b.smap.slots],
-        }
+    block_data=_playback_block_data(mid,bb)
     block_data_json=json.dumps(block_data,separators=(",",":"))
     accent_levels_json=json.dumps(ACCENT_LEVELS["schemes"],separators=(",",":"),ensure_ascii=False)
     accent_legend=" ".join(
@@ -1630,12 +1666,54 @@ def render(path,mid,bars_,bb,skipped_leading_bars=0):
         _variant["preview"]=_corrected_preview_payload(path,mid,_resolution,int(_tolerance),skipped_leading_bars)
     correction_json=json.dumps(correction_payload,separators=(",",":"))
     auto_grid=correction_payload["auto_resolution"]
+
+    # Exact source MIDI bytes for whole-song transport. Embedding avoids the
+    # browser file:// restriction on fetching a sibling MIDI file.
+    source_midi_b64=base64.b64encode(path.read_bytes()).decode("ascii")
+
+    tempo_events=[]
+    for track in mid.tracks:
+        tick=0
+        for msg in track:
+            tick+=msg.time
+            if isinstance(msg,MetaMessage) and msg.type=="set_tempo":
+                tempo_events.append((tick,int(msg.tempo)))
+    tempo_by_tick={0:500000}
+    for tick,tempo in sorted(tempo_events):
+        tempo_by_tick[int(tick)]=int(tempo)
+    tempo_points=sorted(tempo_by_tick.items())
+    def tick_seconds(target):
+        target=max(0,int(target)); prev=0; tempo=500000; seconds=0.0
+        for tick,new_tempo in tempo_points:
+            if tick>target:
+                break
+            if tick>prev:
+                seconds+=(tick-prev)*tempo/1_000_000/mid.ticks_per_beat
+                prev=tick
+            tempo=new_tempo
+        if target>prev:
+            seconds+=(target-prev)*tempo/1_000_000/mid.ticks_per_beat
+        return seconds
+    max_tick=0
+    for track in mid.tracks:
+        t=0
+        for msg in track:
+            t+=msg.time
+        max_tick=max(max_tick,t)
+    song_bars=[{
+        "bar":int(b.bars[0].no+1),
+        "tick":int(b.start),
+        "start":tick_seconds(b.start),
+        "end":tick_seconds(b.end),
+        "pattern":int(b.pattern_no) if b.events and not b.ending_hit and b.pattern_no>0 else 0,
+    } for b in bb]
+    song_timeline_json=json.dumps({"duration":tick_seconds(max_tick),"bars":song_bars},separators=(",",":"))
     return f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{html.escape(path.name)} — ADC PatternLab</title><style>
-:root{{--bg:#f4f6f8;--panel:#fff;--ink:#17202a;--muted:#65717e;--line:#d9dee4;--major:#9aa6b2;--raw:#1f6feb;--slot:#8a3ffc;--warn:#c2410c;--v0:#dbeafe;--v1:#93c5fd;--v2:#3b82f6;--v3:#1e3a8a;--h0:#fee2e2;--h1:#fecaca;--h2:#f87171;--h3:#dc2626;--h4:#7f1d1d}}@media(prefers-color-scheme:dark){{:root{{--bg:#11151a;--panel:#1a2027;--ink:#e6edf3;--muted:#9da9b5;--line:#303843;--major:#66717d;--raw:#58a6ff;--slot:#c297ff;--warn:#ff9b6a;--v0:#23395d;--v1:#2f6fab;--v2:#58a6ff;--v3:#b6d8ff;--h0:#4c1d1d;--h1:#7f1d1d;--h2:#b91c1c;--h3:#ef4444;--h4:#fca5a5}}}}*{{box-sizing:border-box}}body{{margin:0;font-family:system-ui,sans-serif;background:var(--bg);color:var(--ink)}}header{{position:sticky;top:0;z-index:1000;padding:10px 16px 8px;background:var(--panel);border-bottom:1px solid var(--line);box-shadow:0 3px 12px rgba(0,0,0,.14)}}h1{{margin:0 0 6px;font-size:20px}}.summary{{font-size:13px;color:var(--muted)}}button{{margin-top:8px;padding:7px 11px;border:1px solid var(--line);border-radius:7px;background:var(--panel);color:var(--ink);font-weight:700;cursor:pointer}}.legend{{margin-left:14px;font-size:12px;color:var(--muted)}}.lg{{display:inline-block;width:12px;height:12px;margin:0 3px 0 7px;vertical-align:-2px;border:1px solid var(--line)}}.v0{{background:var(--v0)}}.v1{{background:var(--v1)}}.v2{{background:var(--v2)}}.v3{{background:var(--v3)}}.h0{{background:var(--h0)}}.h1{{background:var(--h1)}}.h2{{background:var(--h2)}}.h3{{background:var(--h3)}}.h4{{background:var(--h4)}}main{{overflow:auto;padding:12px}}svg{{display:block;cursor:pointer;user-select:none}}.bg{{fill:var(--panel);stroke:var(--line)}}.bad .bg{{stroke:var(--warn);stroke-width:2}}.title{{fill:var(--ink);font-size:13px;font-weight:750}}.meta{{fill:var(--muted);font-size:10px}}.sid{{fill:var(--slot);font-size:12px;font-weight:800}}.warning{{fill:var(--warn);font-size:10px;font-weight:800}}.row{{fill:var(--ink);font-size:8.5px}}.guide,.rguide{{stroke:var(--line);stroke-width:.7}}.major{{stroke:var(--major);stroke-width:1.45}}.barline{{stroke:var(--ink);stroke-width:2.1;opacity:.72}}.hit{{opacity:1}}.rawduration{{stroke-width:1.4;stroke-linecap:round;opacity:.72}}.rawhit{{stroke:var(--panel);stroke-width:.8}}.grid-omitted.rawhit{{stroke:#d32f2f!important;stroke-width:2.2px!important}}.unknown-row{{fill:#dc2626!important;font-weight:800}}.deviation-aligned.rawhit{{fill:#2563eb}}.deviation-near.rawhit{{fill:#2563eb}}.deviation-moderate.rawhit{{fill:#2563eb}}.deviation-far.rawhit{{fill:#2563eb}}.deviation-aligned.rawduration{{stroke:#2563eb}}.deviation-near.rawduration{{stroke:#2563eb}}.deviation-moderate.rawduration{{stroke:#2563eb}}.deviation-far.rawduration{{stroke:#2563eb}}.veryweak{{stroke:var(--ink);stroke-width:1;stroke-dasharray:2 1}}.flamgrace{{stroke-width:1.5;stroke-dasharray:none;opacity:1}}.flammain{{stroke-width:.8}}.ornnote{{fill:#2563eb!important;stroke:#d32f2f!important;stroke-width:2.0px!important;stroke-dasharray:none!important}}.ornduration{{stroke:#2563eb!important;opacity:.95!important}}.slothit{{fill:var(--slot)}}.slotcell{{stroke:var(--panel);stroke-width:.35}}.velocity0{{fill:var(--v0)}}.velocity1{{fill:var(--v1)}}.velocity2{{fill:var(--v2)}}.velocity3{{fill:var(--v3)}}svg.accentmode .slotcell.hitstrength0{{fill:var(--h0)}}svg.accentmode .slotcell.hitstrength1{{fill:var(--h1)}}svg.accentmode .slotcell.hitstrength2{{fill:var(--h2)}}svg.accentmode .slotcell.hitstrength3{{fill:var(--h3)}}svg.accentmode .slotcell.hitstrength4{{fill:var(--h4)}}.unknown{{fill:var(--warn);stroke:var(--panel)}}.subdiv-layer{{display:none}}.subdiv-layer.active{{display:inline}}.slot{{display:none}}svg.slotmode .raw{{display:none}}svg.slotmode .slot{{display:inline}}details{{margin:0 18px 18px;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--panel)}}.pattern-controls-wrap{{overflow:visible}}.pattern-controls{{height:180px;display:flex;flex-direction:column;gap:4px;padding:6px 8px;border-top:1px solid var(--line);font:11px system-ui,sans-serif;color:var(--ink);background:var(--panel)}}.pattern-controls label{{display:flex;align-items:center;gap:3px;white-space:nowrap;min-width:0}}.pattern-controls select,.pattern-controls input[type=text]{{min-width:0;padding:3px 4px;border:1px solid var(--line);border-radius:5px;background:var(--panel);color:var(--ink);font-size:10.5px}}.catalog-row{{display:grid;grid-template-columns:60px 91px 48px minmax(72px,1fr);gap:4px;align-items:center}}.catalog-row .genre-label{{gap:3px}}.catalog-row .genre-select{{width:54px;text-transform:uppercase;text-overflow:clip}}.pattern-controls .number-label{{height:25px;justify-self:end}}.pattern-controls .start-number{{width:42px}}.pattern-controls .name-preview{{display:block;min-height:12px;text-align:right;font-size:9.5px;line-height:12px;font-weight:800;color:var(--slot);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}.timing-fit{{display:flex;align-items:center;gap:5px;min-height:17px;white-space:nowrap;color:var(--muted);font-size:10px}}.timing-fit strong{{color:var(--ink)}}.fit-item{{padding:1px 3px;border-radius:4px}}.fit-item.selected{{background:var(--bg);color:var(--ink);font-weight:800;outline:1px solid var(--line)}}.fit-best{{margin-left:auto;color:var(--slot);font-weight:800}}.playback-box{{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:31px 28px 22px;gap:4px 7px;padding-top:4px;border-top:1px solid var(--line)}}.pattern-controls .play-compare{{grid-column:1 / 3;margin:0;padding:6px 8px;font-size:11px;background:var(--slot);color:#fff;border-color:var(--slot)}}.playback-settings{{grid-column:1 / 3;display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:center}}.playback-settings label{{display:grid;grid-template-columns:auto 1fr;gap:4px}}.playback-settings select{{width:100%}}.play-stage{{grid-column:1 / 2;display:flex;align-items:center;gap:4px;min-width:0}}.stage-pill{{display:inline-flex;align-items:center;justify-content:center;min-width:29px;height:19px;padding:0 7px;border:1px solid var(--line);border-radius:999px;background:var(--panel);color:var(--muted);font-size:10px;font-weight:800;opacity:.55;transition:opacity .15s,background .15s,color .15s,transform .15s}}.stage-pill.unused{{display:none}}.stage-pill.active{{opacity:1;color:#fff;transform:translateY(-1px)}}.stage-raw.active{{background:#2563eb;border-color:#2563eb}}.stage-quantized.active{{background:#7c3aed;border-color:#7c3aed}}.play-progress{{grid-column:1 / 3;grid-row:3;height:6px;overflow:hidden;border-radius:999px;background:var(--line)}}.play-progress span{{display:block;width:0;height:100%;background:var(--slot);transition:width .08s linear}}.pattern-controls .play-compare.playing{{background:var(--warn);border-color:var(--warn)}}.pattern-controls .invalid{{border-color:var(--warn)!important;outline:1px solid var(--warn)}}#current-pattern{{display:inline-block;margin-left:10px;padding:3px 8px;border:1px solid var(--line);border-radius:999px;color:var(--muted);font-size:11px;font-weight:700}}#number-status{{display:inline-block;margin-left:10px;font-size:12px;color:var(--muted)}}#number-status.error{{color:var(--warn);font-weight:700}}input[type=checkbox]{{width:16px;height:16px}}
+:root{{--bg:#f4f6f8;--panel:#fff;--ink:#17202a;--muted:#65717e;--line:#d9dee4;--major:#9aa6b2;--raw:#1f6feb;--slot:#8a3ffc;--warn:#c2410c;--v0:#dbeafe;--v1:#93c5fd;--v2:#3b82f6;--v3:#1e3a8a;--h0:#fee2e2;--h1:#fecaca;--h2:#f87171;--h3:#dc2626;--h4:#7f1d1d}}@media(prefers-color-scheme:dark){{:root{{--bg:#11151a;--panel:#1a2027;--ink:#e6edf3;--muted:#9da9b5;--line:#303843;--major:#66717d;--raw:#58a6ff;--slot:#c297ff;--warn:#ff9b6a;--v0:#23395d;--v1:#2f6fab;--v2:#58a6ff;--v3:#b6d8ff;--h0:#4c1d1d;--h1:#7f1d1d;--h2:#b91c1c;--h3:#ef4444;--h4:#fca5a5}}}}*{{box-sizing:border-box}}body{{margin:0;font-family:system-ui,sans-serif;background:var(--bg);color:var(--ink)}}header{{position:sticky;top:0;z-index:1000;padding:10px 16px 8px;background:var(--panel);border-bottom:1px solid var(--line);box-shadow:0 3px 12px rgba(0,0,0,.14)}}h1{{margin:0 0 6px;font-size:20px}}.summary{{font-size:13px;color:var(--muted)}}button{{margin-top:8px;padding:7px 11px;border:1px solid var(--line);border-radius:7px;background:var(--panel);color:var(--ink);font-weight:700;cursor:pointer}}.legend{{margin-left:14px;font-size:12px;color:var(--muted)}}.lg{{display:inline-block;width:12px;height:12px;margin:0 3px 0 7px;vertical-align:-2px;border:1px solid var(--line)}}.v0{{background:var(--v0)}}.v1{{background:var(--v1)}}.v2{{background:var(--v2)}}.v3{{background:var(--v3)}}.h0{{background:var(--h0)}}.h1{{background:var(--h1)}}.h2{{background:var(--h2)}}.h3{{background:var(--h3)}}.h4{{background:var(--h4)}}main{{overflow:auto;padding:12px}}svg{{display:block;cursor:pointer;user-select:none}}.bg{{fill:var(--panel);stroke:var(--line)}}.bad .bg{{stroke:var(--warn);stroke-width:2}}.title{{fill:var(--ink);font-size:13px;font-weight:750}}.meta{{fill:var(--muted);font-size:10px}}.sid{{fill:var(--slot);font-size:12px;font-weight:800}}.warning{{fill:var(--warn);font-size:10px;font-weight:800}}.row{{fill:var(--ink);font-size:8.5px}}.guide,.rguide{{stroke:var(--line);stroke-width:.7}}.major{{stroke:var(--major);stroke-width:1.45}}.barline{{stroke:var(--ink);stroke-width:2.1;opacity:.72}}.hit{{opacity:1}}.rawduration{{stroke-width:1.4;stroke-linecap:round;opacity:.72}}.rawhit{{stroke:var(--panel);stroke-width:.8}}.grid-omitted.rawhit{{stroke:#d32f2f!important;stroke-width:2.2px!important}}.unknown-row{{fill:#dc2626!important;font-weight:800}}.deviation-aligned.rawhit{{fill:#2563eb}}.deviation-near.rawhit{{fill:#2563eb}}.deviation-moderate.rawhit{{fill:#2563eb}}.deviation-far.rawhit{{fill:#2563eb}}.deviation-aligned.rawduration{{stroke:#2563eb}}.deviation-near.rawduration{{stroke:#2563eb}}.deviation-moderate.rawduration{{stroke:#2563eb}}.deviation-far.rawduration{{stroke:#2563eb}}.veryweak{{stroke:var(--ink);stroke-width:1;stroke-dasharray:2 1}}.flamgrace{{stroke-width:1.5;stroke-dasharray:none;opacity:1}}.flammain{{stroke-width:.8}}.ornnote{{fill:#2563eb!important;stroke:#d32f2f!important;stroke-width:2.0px!important;stroke-dasharray:none!important}}.ornduration{{stroke:#2563eb!important;opacity:.95!important}}.slothit{{fill:var(--slot)}}.slotcell{{stroke:var(--panel);stroke-width:.35}}.velocity0{{fill:var(--v0)}}.velocity1{{fill:var(--v1)}}.velocity2{{fill:var(--v2)}}.velocity3{{fill:var(--v3)}}svg.accentmode .slotcell.hitstrength0{{fill:var(--h0)}}svg.accentmode .slotcell.hitstrength1{{fill:var(--h1)}}svg.accentmode .slotcell.hitstrength2{{fill:var(--h2)}}svg.accentmode .slotcell.hitstrength3{{fill:var(--h3)}}svg.accentmode .slotcell.hitstrength4{{fill:var(--h4)}}.unknown{{fill:var(--warn);stroke:var(--panel)}}.subdiv-layer{{display:none}}.subdiv-layer.active{{display:inline}}.slot{{display:none}}svg.slotmode .raw{{display:none}}svg.slotmode .slot{{display:inline}}details{{margin:0 18px 18px;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--panel)}}.pattern-controls-wrap{{overflow:visible}}.pattern-controls{{height:180px;display:flex;flex-direction:column;gap:4px;padding:6px 8px;border-top:1px solid var(--line);font:11px system-ui,sans-serif;color:var(--ink);background:var(--panel)}}.pattern-controls label{{display:flex;align-items:center;gap:3px;white-space:nowrap;min-width:0}}.pattern-controls select,.pattern-controls input[type=text]{{min-width:0;padding:3px 4px;border:1px solid var(--line);border-radius:5px;background:var(--panel);color:var(--ink);font-size:10.5px}}.catalog-row{{display:grid;grid-template-columns:60px 91px 48px minmax(72px,1fr);gap:4px;align-items:center}}.catalog-row .genre-label{{gap:3px}}.catalog-row .genre-select{{width:54px;text-transform:uppercase;text-overflow:clip}}.pattern-controls .number-label{{height:25px;justify-self:end}}.pattern-controls .start-number{{width:42px}}.pattern-controls .name-preview{{display:block;min-height:12px;text-align:right;font-size:9.5px;line-height:12px;font-weight:800;color:var(--slot);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}.timing-fit{{display:flex;align-items:center;gap:5px;min-height:17px;white-space:nowrap;color:var(--muted);font-size:10px}}.grid-fit-cycle{{margin:0;padding:1px 5px;border:1px solid var(--line);border-radius:5px;background:var(--panel);color:var(--ink);font:inherit;font-weight:800;line-height:1.35;cursor:pointer}}.grid-fit-cycle:hover{{background:var(--bg)}}.grid-fit-cycle:focus-visible{{outline:2px solid var(--slot);outline-offset:1px}}.fit-item{{padding:1px 3px;border-radius:4px}}.fit-item.selected{{background:var(--bg);color:var(--ink);font-weight:800;outline:1px solid var(--line)}}.fit-best{{margin-left:auto;color:var(--slot);font-weight:800}}.playback-box{{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:31px 28px 22px;gap:4px 7px;padding-top:4px;border-top:1px solid var(--line)}}.pattern-controls .play-compare{{grid-column:1 / 2;margin:0;padding:6px 8px;font-size:11px;background:var(--slot);color:#fff;border-color:var(--slot)}}.pattern-controls .save-pattern{{grid-column:2 / 3;margin:0;padding:6px 8px;font-size:11px;background:var(--panel);color:var(--slot);border-color:var(--slot)}}.pattern-controls .save-pattern:hover{{background:var(--bg)}}.playback-settings{{grid-column:1 / 3;display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:center}}.playback-settings label{{display:grid;grid-template-columns:auto 1fr;gap:4px}}.playback-settings select{{width:100%}}.play-stage{{grid-column:1 / 2;display:flex;align-items:center;gap:4px;min-width:0}}.stage-pill{{display:inline-flex;align-items:center;justify-content:center;min-width:29px;height:19px;padding:0 7px;border:1px solid var(--line);border-radius:999px;background:var(--panel);color:var(--muted);font-size:10px;font-weight:800;opacity:.55;transition:opacity .15s,background .15s,color .15s,transform .15s}}.stage-pill.unused{{display:none}}.stage-pill.active{{opacity:1;color:#fff;transform:translateY(-1px)}}.stage-raw.active{{background:#2563eb;border-color:#2563eb}}.stage-quantized.active{{background:#7c3aed;border-color:#7c3aed}}.play-progress{{grid-column:1 / 3;grid-row:3;height:6px;overflow:hidden;border-radius:999px;background:var(--line)}}.play-progress span{{display:block;width:0;height:100%;background:var(--slot);transition:width .08s linear}}.pattern-controls .play-compare.playing{{background:var(--warn);border-color:var(--warn)}}.pattern-controls .invalid{{border-color:var(--warn)!important;outline:1px solid var(--warn)}}#current-pattern{{display:inline-block;margin-left:10px;padding:3px 8px;border:1px solid var(--line);border-radius:999px;color:var(--muted);font-size:11px;font-weight:700}}#number-status{{display:inline-block;margin-left:10px;font-size:12px;color:var(--muted)}}#number-status.error{{color:var(--warn);font-weight:700}}input[type=checkbox]{{width:16px;height:16px}}
 
 .header-top{{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}}.brand h1{{margin:0;font-size:19px;line-height:1.1}}.brand-sub{{margin-top:2px;color:var(--muted);font-size:10.5px}}.header-state{{display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end}}.mode-badge{{padding:3px 8px;border-radius:999px;background:var(--bg);border:1px solid var(--line);font-size:10.5px;font-weight:800}}.summary{{margin-top:5px;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}.header-actions{{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:6px;padding-top:6px;border-top:1px solid var(--line)}}.tool-groups{{display:flex;align-items:center;gap:12px;flex-wrap:wrap}}.tool-group{{display:flex;align-items:center;gap:5px}}.tool-group+.tool-group{{padding-left:12px;border-left:1px solid var(--line)}}.tool-label{{color:var(--muted);font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.04em}}.header-actions button{{margin:0;padding:5px 9px;font-size:11px}}.service-area{{display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end}}.global-correction{{display:grid;grid-template-columns:auto auto auto minmax(180px,1fr) auto auto;align-items:center;gap:6px;margin-top:5px;padding-top:5px;border-top:1px dashed var(--line);font-size:10.5px}}.global-correction strong{{font-size:10px;text-transform:uppercase;letter-spacing:.035em;color:var(--muted)}}.global-correction label{{display:flex;align-items:center;gap:4px;white-space:nowrap}}.global-correction select{{padding:3px 5px;border:1px solid var(--line);border-radius:5px;background:var(--panel);color:var(--ink);font-size:10.5px}}.global-correction .correction-result{{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-variant-numeric:tabular-nums}}.global-correction .correction-result b{{color:var(--ink)}}#save-corrected-midi,#preview-corrected-midi{{margin:0;padding:5px 9px;background:var(--panel);font-size:10.5px}}.service-dot{{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--major)}}.service-dot.online{{background:#16a34a}}.service-dot.offline{{background:#dc2626}}.service-text{{font-size:10.5px;color:var(--muted)}}.legend-panel{{margin:0;padding:0;border:0;background:transparent}}.legend-panel summary{{cursor:pointer;font-size:10.5px;font-weight:700;color:var(--muted);list-style:none}}.legend-panel summary::-webkit-details-marker{{display:none}}.legend-content{{position:absolute;right:18px;top:100%;width:min(680px,calc(100vw - 36px));padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--panel);box-shadow:0 8px 24px rgba(0,0,0,.18);font-size:11px;color:var(--muted);line-height:1.7}}@media(max-width:950px){{.header-actions{{align-items:flex-start}}.service-text{{display:none}}.global-correction{{grid-template-columns:auto auto auto 1fr}}#preview-corrected-midi,#save-corrected-midi{{grid-row:2}}}}
 .genre-modal-backdrop{{position:fixed;inset:0;z-index:5000;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.48)}}.genre-modal-backdrop[hidden]{{display:none}}.genre-modal{{width:min(440px,calc(100vw - 32px));padding:18px;border:1px solid var(--line);border-radius:12px;background:var(--panel);box-shadow:0 18px 48px rgba(0,0,0,.28)}}.genre-modal h2{{margin:0 0 7px;font-size:18px}}.genre-modal p{{margin:0 0 12px;color:var(--muted);font-size:12px;line-height:1.5}}.genre-modal label{{display:grid;grid-template-columns:auto 1fr;gap:8px;align-items:center;font-size:12px;font-weight:700}}.genre-modal select,.genre-modal input{{width:100%;padding:7px;border:1px solid var(--line);border-radius:7px;background:var(--panel);color:var(--ink);text-transform:uppercase}}.genre-modal-hint{{margin-top:8px!important;font-size:10.5px!important}}.genre-modal-actions{{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}}.number-gap-title{{fill:var(--warn)!important}}
-.pattern-analysis{{margin:0 12px 16px;display:grid;grid-template-columns:1fr;gap:12px;max-width:{sw}px}}.sequence-transition-grid{{display:grid;grid-template-columns:minmax(0,1fr) minmax(430px,.92fr);gap:12px;align-items:stretch}}.analysis-grid{{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.25fr);gap:12px}}.analysis-panel{{background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:12px 14px;min-width:0}}.analysis-panel h2{{margin:0 0 4px;font-size:15px}}.analysis-note{{margin:0 0 9px;color:var(--muted);font-size:11px;line-height:1.45}}.analysis-scroll{{overflow:auto;max-width:100%}}.analysis-table{{width:100%;border-collapse:collapse;table-layout:fixed;font-size:11px}}.analysis-table th,.analysis-table td{{padding:6px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}}.analysis-table th{{color:var(--muted);font-weight:800;white-space:nowrap}}.analysis-table .anum{{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}}.analysis-pattern-link{{font-weight:850;color:var(--slot);text-decoration:none}}.analysis-pattern-link:hover{{text-decoration:underline}}.pattern-reference{{cursor:pointer}}.pattern-hover-preview{{position:fixed;z-index:9999;display:none;width:300px;max-width:min(300px,calc(100vw - 24px));padding:8px;background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:0 10px 34px rgba(0,0,0,.24);pointer-events:none}}.pattern-hover-preview.visible{{display:block}}.pattern-hover-preview .hover-title{{font-size:11px;font-weight:850;margin:0 0 5px;color:var(--text)}}.pattern-hover-preview svg{{display:block;width:100%;height:auto;background:var(--panel);border-radius:7px}}.col-pattern{{width:76px}}.col-count{{width:62px}}.col-pct{{width:62px}}.col-bars{{width:auto}}.col-nextcount{{width:78px}}.col-successors{{width:auto}}.col-base{{width:145px}}.col-sim{{width:82px}}.col-diff{{width:auto}}.col-family{{width:78px}}.col-rep{{width:105px}}.col-members{{width:180px}}.col-parent{{width:170px}}.col-orn{{width:145px}}.family-name{{font-weight:850;white-space:nowrap}}.bars-cell,.variation-cell{{overflow-wrap:anywhere;line-height:1.45}}.transition-chip{{display:inline-block;margin:1px 5px 2px 0;padding:2px 6px;border:1px solid var(--line);border-radius:999px;white-space:nowrap;background:var(--bg)}}.transition-chip small{{color:var(--muted)}}.transition-chip.self-transition{{background:#dbeafe;border-color:#60a5fa;color:#1e3a8a;font-weight:800}}@media(prefers-color-scheme:dark){{.transition-chip.self-transition{{background:#18324f;border-color:#60a5fa;color:#bfdbfe}}}}.analysis-muted{{color:var(--muted)}}.sequence-strip{{display:flex;flex-wrap:wrap;gap:5px;align-items:center}}.sequence-run{{display:inline-block;padding:3px 7px;border:1px solid var(--line);border-radius:6px;text-decoration:none;font-size:11px;font-weight:800}}.pattern-run{{color:var(--slot);background:var(--bg)}}.gap-run{{color:var(--muted);font-weight:650;border-style:dashed}}.transition-graph-panel{{overflow:hidden}}.transition-graph-toolbar{{display:flex;gap:10px;align-items:center;justify-content:space-between;margin:-2px 0 4px;font-size:10px;color:var(--muted)}}.transition-graph-toolbar label{{display:flex;align-items:center;gap:5px;font-weight:750}}.transition-graph-filter{{font:inherit;color:var(--text);background:var(--bg);border:1px solid var(--line);border-radius:5px;padding:2px 5px}}.transition-graph-legend{{text-align:right}}.transition-graph{{display:block;width:100%;height:auto;max-height:410px;overflow:visible;touch-action:none}}.transition-edge{{stroke:var(--muted);opacity:.42;transition:opacity .12s ease}}.transition-edge.repeated-edge{{stroke:var(--slot);opacity:.62}}.transition-edge.self-edge{{stroke:#3b82f6;opacity:.72}}.transition-arrowhead{{fill:var(--muted)}}.transition-edge-label{{font-size:9px;font-weight:800;text-anchor:middle;paint-order:stroke;stroke:var(--panel);stroke-width:3px;stroke-linejoin:round;fill:var(--muted)}}.transition-node{{cursor:grab}}.transition-node.is-dragging{{cursor:grabbing}}.transition-node circle{{fill:var(--panel);stroke:var(--slot);stroke-width:1.6;vector-effect:non-scaling-stroke;transition:stroke-width .12s ease,fill .12s ease}}.transition-node text{{font-size:9px;font-weight:850;text-anchor:middle;fill:var(--text);pointer-events:none}}.transition-node:hover circle{{stroke-width:3;fill:var(--bg)}}.transition-edge.is-filtered,.transition-edge-label.is-filtered{{display:none}}@media(max-width:1050px){{.sequence-transition-grid{{grid-template-columns:1fr}}}}@media(max-width:900px){{.analysis-grid{{grid-template-columns:1fr}}}}
+.pattern-analysis{{margin:0 12px 16px;display:grid;grid-template-columns:1fr;gap:12px;max-width:{sw}px}}.sequence-transition-grid{{display:grid;grid-template-columns:minmax(0,1fr) minmax(430px,.92fr);gap:12px;align-items:stretch}}.analysis-grid{{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.25fr);gap:12px}}.analysis-panel{{background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:12px 14px;min-width:0}}.analysis-panel h2{{margin:0 0 4px;font-size:15px}}.analysis-note{{margin:0 0 9px;color:var(--muted);font-size:11px;line-height:1.45}}.analysis-scroll{{overflow:auto;max-width:100%}}.analysis-table{{width:100%;border-collapse:collapse;table-layout:fixed;font-size:11px}}.analysis-table th,.analysis-table td{{padding:6px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}}.analysis-table th{{color:var(--muted);font-weight:800;white-space:nowrap}}.analysis-table .anum{{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}}.analysis-pattern-link{{font-weight:850;color:var(--slot);text-decoration:none}}.analysis-pattern-link:hover{{text-decoration:underline}}.pattern-reference{{cursor:pointer}}.pattern-hover-preview{{position:fixed;z-index:9999;display:none;width:300px;max-width:min(300px,calc(100vw - 24px));padding:8px;background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:0 10px 34px rgba(0,0,0,.24);pointer-events:none}}.pattern-hover-preview.visible{{display:block}}.pattern-hover-preview .hover-title{{font-size:11px;font-weight:850;margin:0 0 5px;color:var(--text)}}.pattern-hover-preview svg{{display:block;width:100%;height:auto;background:var(--panel);border-radius:7px}}.col-pattern{{width:76px}}.col-count{{width:62px}}.col-pct{{width:62px}}.col-bars{{width:auto}}.col-nextcount{{width:78px}}.col-successors{{width:auto}}.col-base{{width:145px}}.col-sim{{width:82px}}.col-diff{{width:auto}}.col-family{{width:78px}}.col-rep{{width:105px}}.col-members{{width:180px}}.col-parent{{width:170px}}.col-orn{{width:145px}}.family-name{{font-weight:850;white-space:nowrap}}.bars-cell,.variation-cell{{overflow-wrap:anywhere;line-height:1.45}}.transition-chip{{display:inline-block;margin:1px 5px 2px 0;padding:2px 6px;border:1px solid var(--line);border-radius:999px;white-space:nowrap;background:var(--bg)}}.transition-chip small{{color:var(--muted)}}.transition-chip.self-transition{{background:#dbeafe;border-color:#60a5fa;color:#1e3a8a;font-weight:800}}@media(prefers-color-scheme:dark){{.transition-chip.self-transition{{background:#18324f;border-color:#60a5fa;color:#bfdbfe}}}}.analysis-muted{{color:var(--muted)}}.sequence-strip{{display:flex;flex-wrap:wrap;gap:5px;align-items:center}}.sequence-run-wrap{{display:inline-flex;align-items:center;position:relative}}.sequence-run{{display:inline-block;padding:3px 18px 3px 7px;border:1px solid var(--line);border-radius:6px;text-decoration:none;font-size:11px;font-weight:800}}.sequence-run-wrap .sequence-run{{border-radius:6px}}.sequence-play-from{{position:absolute;right:2px;top:50%;transform:translateY(-50%);display:inline-flex!important;align-items:center;justify-content:center;margin:0;padding:0;width:14px;height:18px;min-width:0;min-height:0;border:0;border-radius:3px;font-size:10px;font-weight:900;line-height:1;color:var(--slot);background:transparent;cursor:pointer;visibility:visible!important;opacity:.72}}.sequence-play-from:hover{{opacity:1;background:color-mix(in srgb,var(--slot) 10%,transparent)}}.pattern-run{{color:var(--slot);background:var(--bg)}}.gap-run{{color:var(--muted);font-weight:650;border-style:dashed}}.song-transport{{display:grid;grid-template-columns:auto auto minmax(90px,1fr) auto auto;gap:6px;align-items:center;margin:3px 0 10px}}.song-transport button{{margin:0;padding:4px 8px;font-size:10.5px}}.song-progress{{height:6px;overflow:hidden;border-radius:999px;background:var(--line)}}.song-progress span{{display:block;width:0;height:100%;background:var(--slot)}}.song-position{{font-size:10px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}}.song-now{{min-width:92px;font-size:10px;font-weight:800;color:var(--slot);white-space:nowrap;text-align:right}}.sequence-run.song-active{{outline:2px solid var(--slot);outline-offset:1px;background:var(--panel);box-shadow:0 0 0 3px color-mix(in srgb,var(--slot) 14%,transparent)}}.transition-graph-panel{{overflow:hidden}}.transition-graph-toolbar{{display:flex;gap:10px;align-items:center;justify-content:space-between;margin:-2px 0 4px;font-size:10px;color:var(--muted)}}.transition-graph-toolbar label{{display:flex;align-items:center;gap:5px;font-weight:750}}.transition-graph-filter{{font:inherit;color:var(--text);background:var(--bg);border:1px solid var(--line);border-radius:5px;padding:2px 5px}}.transition-export-actions{{display:inline-flex;gap:5px;align-items:center}}.transition-export-svg,.transition-export-cards{{margin:0;padding:3px 7px;font-size:10px;white-space:nowrap}}.transition-graph-legend{{text-align:right;flex:1}}.transition-graph{{display:block;width:100%;height:auto;max-height:410px;overflow:visible;touch-action:none}}.transition-edge{{stroke:var(--muted);opacity:.42;transition:opacity .12s ease}}.transition-edge.repeated-edge{{stroke:var(--slot);opacity:.62}}.transition-edge.self-edge{{stroke:#3b82f6;opacity:.72}}.transition-arrowhead{{fill:var(--muted)}}.transition-edge-label{{font-size:9px;font-weight:800;text-anchor:middle;paint-order:stroke;stroke:var(--panel);stroke-width:3px;stroke-linejoin:round;fill:var(--muted)}}.transition-node{{cursor:grab}}.transition-node.is-dragging{{cursor:grabbing}}.transition-node circle{{fill:var(--panel);stroke:var(--slot);stroke-width:1.6;vector-effect:non-scaling-stroke;transition:stroke-width .12s ease,fill .12s ease}}.transition-node text{{font-size:9px;font-weight:850;text-anchor:middle;fill:var(--text);pointer-events:none}}.transition-node:hover circle{{stroke-width:3;fill:var(--bg)}}.transition-edge.is-filtered,.transition-edge-label.is-filtered{{display:none}}@media(max-width:1050px){{.sequence-transition-grid{{grid-template-columns:1fr}}}}@media(max-width:900px){{.analysis-grid{{grid-template-columns:1fr}}}}
 #print-gallery{{display:none}}
 @media screen{{
   #matrix,#matrix-preview{{max-width:none}}
@@ -1659,7 +1737,7 @@ def render(path,mid,bars_,bb,skipped_leading_bars=0):
   .print-card .bg{{fill:#fff!important}}
   .pattern-analysis{{margin:0!important;max-width:none!important;gap:3mm!important}}
   .sequence-transition-grid,.analysis-grid{{grid-template-columns:1fr!important;gap:3mm!important}}
-  .transition-graph-toolbar{{display:none!important}}
+  .transition-graph-toolbar,.song-transport{{display:none!important}}
   .transition-graph{{max-height:85mm!important}}
   .analysis-panel{{padding:2.5mm!important;border-radius:2mm!important;box-shadow:none!important}}
   .analysis-panel h2{{font-size:10pt!important;break-after:avoid-page}}
@@ -1676,9 +1754,12 @@ def render(path,mid,bars_,bb,skipped_leading_bars=0):
 <div class="summary" title="{header_summary}">{header_summary}</div>
 <div class="header-actions"><div class="tool-groups"><div class="tool-group"><span class="tool-label">View</span><button id="toggle">RAW / QUANTIZED</button><button id="slot-display" type="button" class="quantized-only">Velocity / Accent</button></div><div class="tool-group"><span class="tool-label">Export</span><button id="download-csv" type="button">CSV</button><button id="print-report" type="button">Print / PDF</button></div><span id="number-status"></span></div><div class="service-area"><span id="service-dot" class="service-dot"></span><span id="service-text" class="service-text">Checking playback service…</span><details class="legend-panel"><summary>Legend ▾</summary><div class="legend-content"><div>Velocity: <i class="lg v0"></i>0 (1–31) <i class="lg v1"></i>1 (32–63) <i class="lg v2"></i>2 (64–95) <i class="lg v3"></i>3 (96–127)</div><div>ADX 6-accent: {accent_legend}</div><div>RAW notes: <i class="lg" style="background:#2563eb"></i>original MIDI note-on; deviation is not color-coded</div><div>RAW: <i class="lg" style="border:2px solid #d32f2f"></i>ORN flam grace · <i class="lg" style="background:#2563eb;border:2px solid #d32f2f"></i>off-grid, omitted from GRID · red label = outside SLOT_MAP</div></div></details></div></div>
 <div class="global-correction"><strong>Grid correction</strong><label>Grid <select id="global-grid"><option value="16">16</option><option value="32">32</option><option value="8T">8T</option><option value="16T">16T</option></select></label><label>Tol. <select id="global-tolerance"><option value="1">±1 tick</option><option value="2">±2 ticks</option><option value="3">±3 ticks</option></select></label><span id="correction-result" class="correction-result"></span><button id="preview-corrected-midi" type="button">Preview</button><button id="save-corrected-midi" type="button">Save corrected MIDI…</button></div>
-</header><div id="genre-modal-backdrop" class="genre-modal-backdrop" hidden><div class="genre-modal" role="dialog" aria-modal="true" aria-labelledby="genre-modal-title"><h2 id="genre-modal-title">Select genre</h2><p>The filename did not identify a genre, so PatternLab fell back to DRM. Type a 3-character genre code to apply to all pattern cards.</p><label>Genre code <input id="genre-modal-code" type="text" inputmode="text" maxlength="3" placeholder="e.g. SKA" autocomplete="off"/></label><p class="genre-modal-hint">Enter a 3-character genre code. It will be added to every card for this report.</p><div class="genre-modal-actions"><button id="genre-modal-apply" type="button">Apply to all cards</button></div></div></div><main><svg id="matrix" xmlns="http://www.w3.org/2000/svg" width="{sw}" height="{sh}" viewBox="0 0 {sw} {sh}">{body_html}</svg><svg id="matrix-preview" xmlns="http://www.w3.org/2000/svg" style="display:none"></svg></main><section id="print-gallery" aria-hidden="true"></section>{analysis_html}<details><summary>Analysis notes</summary><p>Each block is checked only against earlier blocks in the same MIDI file. Pattern identity is checked after SLOT_MAP abstraction, using relative onset tick and abstract slot; velocity and note duration are ignored. Notes outside the selected map retain raw-note identity. Repeated source bars keep the same Pattern number but are omitted from the card gallery; their occurrence count and source bars are summarized in the representative card and analysis table. When raw GM notes differ but collapse to the same abstract slots, the card and CSV describe the raw-note variant.</p><p>Trailing empty bars are discarded from the one-bar pattern stream. A final musical bar containing only one onset group at its beginning is labeled ENDING HIT and excluded from the pattern catalog.</p><p>Each card initially uses the automatically detected resolution. Its own Resolution selector can immediately switch the reference grid and SLOT quantization among 16, 32, 8T, and 16T without affecting other cards. Reloading the HTML restores the original automatic selections. Grid fit is a separate visual diagnostic: for each candidate grid it reports the percentage of RAW note-on events that fall within 5% of one grid step from the nearest line. Best marks the highest such percentage, with mean normalized error used only to break ties. It does not overwrite the shared rhythm-analysis decision.</p><p>If no SLOT_MAP covers every note, the nearest map is used, the card receives a red border, and uncovered MIDI notes are listed as MISSING NOTES. Ties fall back conservatively toward lower IDs, beginning with LEGACY 12.</p><p>RAW view places every note-on circle at its original MIDI tick position and extends a horizontal line to the recorded note-off position. Very short durations receive a two-pixel minimum display line; the note-on position itself is never moved. The vertical subdivision lines are reference overlays only; changing a card’s Resolution selector never moves RAW notes. Velocity controls circle size. RAW note color is uniform blue and does not encode distance from the selected grid; the existing deviation classes are retained only for internal diagnostics. Notes that currently trigger automatic ORN candidacy use the same blue fill as ordinary RAW notes and are distinguished only by a red outline: removable grace notes of detected flam pairs. Very weak hits (velocity ≤ 30) are a 6-accent strength diagnostic only and do not trigger ORN candidacy. Ordinary off-grid notes that are omitted from the selected GRID resolution keep their RAW fill color, receive a red outline, and show the grid omission reason on hover. Hovering a purple note shows the exact reason, including velocity threshold or flam confidence, tick gap, threshold, and whether the grace is removed from subdivision. Flam main hits remain blue because they stay in the ADX grid.</p><p>The Play button sends MIDI generated from the current Compare Mode directly to the local PatternLab playback service at <code>127.0.0.1:8123</code>, which uses the configured FluidSynth executable and SF2 SoundFont. The GRID display button switches between the original four-band MIDI Velocity view and the ADX 6-accent preview. Each non-duplicate card can play either RAW only or RAW → Quantized. Every included section is repeated twice, and adjacent sections are separated by one quarter-note beat. Quantized playback uses the five playable levels of the JSON-defined 6-accent scheme. The displayed symbol, label, velocity range, and representative velocity come from accent_levels.json; an empty cell represents Rest. Flam grace notes marked for removal from subdivision are intentionally omitted there and belong to ORN; the main hit remains in the grid. Very weak hits remain regular GRID hits when they lie exactly on the selected grid. Only note-ons that already lie exactly on the selected grid are shown in SLOT view; off-grid note-ons are never snapped into a cell. When multiple retained on-grid hits occupy one slot/cell, the strongest velocity is shown.</p><p><strong>Global grid correction</strong> is an explicit optional preprocessing step. It can move only channel-10 note onsets that are within ±1, ±2, or ±3 ticks of the selected whole-song 16/32/8T/16T grid. A paired note-off is moved by the same amount so duration is preserved. Events farther from the grid are left untouched. The report previews how many onsets would change. Preview corrected re-runs PatternLab on the proposed corrected MIDI without modifying the source file. Hits that cross a one-bar boundary therefore move into the next pattern card, and duplicate/unique cards and pattern numbers are recalculated from the corrected timing. In corrected preview, duplicate/unique status is recalculated from the corrected timing. Corrected-preview duplicate bars are omitted from the gallery; only representative one-bar patterns remain, while their frequencies are preserved by the re-analysis. The button toggles back to the untouched original report. Save corrected MIDI downloads a separate corrected file, and the source MIDI is never overwritten.</p><p><strong>Pattern Transition Graph</strong> folds the actual one-bar song path into directed pattern-to-pattern relations. Node size reflects pattern occurrences and edge width reflects observed transition count. The graph layout always uses all observed transitions. All edges are shown by default; the selector can reduce the view to repeated edges only or suppress self-transitions. Graph nodes reuse the same hover preview and RAW click playback as other analysis references.</p><p>SLOT_MAP usage: <code>{html.escape(json.dumps(summary,ensure_ascii=False))}</code></p><p>The shared adc_rhythm_analysis module owns the complete subdivision decision: flam detection, grace-note exclusion, onset phase, note-duration evidence, and conservative filename hints. The same flam-filtered events are used for both phase and duration scoring. Beat anchors and the shared half-beat remain excluded from phase evidence.</p></details><script>(()=>{{
+</header><div id="genre-modal-backdrop" class="genre-modal-backdrop" hidden><div class="genre-modal" role="dialog" aria-modal="true" aria-labelledby="genre-modal-title"><h2 id="genre-modal-title">Select genre</h2><p>The filename did not identify a genre, so PatternLab fell back to DRM. Type a 3-character genre code to apply to all pattern cards.</p><label>Genre code <input id="genre-modal-code" type="text" inputmode="text" maxlength="3" placeholder="e.g. SKA" autocomplete="off"/></label><p class="genre-modal-hint">Enter a 3-character genre code. It will be added to every card for this report.</p><div class="genre-modal-actions"><button id="genre-modal-apply" type="button">Apply to all cards</button></div></div></div><main><svg id="matrix" xmlns="http://www.w3.org/2000/svg" width="{sw}" height="{sh}" viewBox="0 0 {sw} {sh}">{body_html}</svg><svg id="matrix-preview" xmlns="http://www.w3.org/2000/svg" style="display:none"></svg></main><section id="print-gallery" aria-hidden="true"></section>{analysis_html}<details><summary>Analysis notes</summary><p>Each block is checked only against earlier blocks in the same MIDI file. Pattern identity is checked after SLOT_MAP abstraction, using relative onset tick and abstract slot; velocity and note duration are ignored. Notes outside the selected map retain raw-note identity. Repeated source bars keep the same Pattern number but are omitted from the card gallery; their occurrence count and source bars are summarized in the representative card and analysis table. When raw GM notes differ but collapse to the same abstract slots, the card and CSV describe the raw-note variant.</p><p>Trailing empty bars are discarded from the one-bar pattern stream. A final musical bar containing only one onset group at its beginning is labeled ENDING HIT and excluded from the pattern catalog.</p><p>Each card initially uses the automatically detected resolution. Its own Resolution selector can immediately switch the reference grid and SLOT quantization among 16, 32, 8T, and 16T without affecting other cards. Reloading the HTML restores the original automatic selections. Grid fit is a separate visual diagnostic: for each candidate grid it reports the percentage of RAW note-on events that fall within 5% of one grid step from the nearest line. Best marks the highest such percentage, with mean normalized error used only to break ties. It does not overwrite the shared rhythm-analysis decision.</p><p>If no SLOT_MAP covers every note, the nearest map is used, the card receives a red border, and uncovered MIDI notes are listed as MISSING NOTES. Ties fall back conservatively toward lower IDs, beginning with LEGACY 12.</p><p>RAW view places every note-on circle at its original MIDI tick position and extends a horizontal line to the recorded note-off position. Very short durations receive a two-pixel minimum display line; the note-on position itself is never moved. The vertical subdivision lines are reference overlays only; changing a card’s Resolution selector never moves RAW notes. Velocity controls circle size. RAW note color is uniform blue and does not encode distance from the selected grid; the existing deviation classes are retained only for internal diagnostics. Notes that currently trigger automatic ORN candidacy use the same blue fill as ordinary RAW notes and are distinguished only by a red outline: removable grace notes of detected flam pairs. Very weak hits (velocity ≤ 30) are a 6-accent strength diagnostic only and do not trigger ORN candidacy. Ordinary off-grid notes that are omitted from the selected GRID resolution keep their RAW fill color, receive a red outline, and show the grid omission reason on hover. Hovering a purple note shows the exact reason, including velocity threshold or flam confidence, tick gap, threshold, and whether the grace is removed from subdivision. Flam main hits remain blue because they stay in the ADX grid.</p><p>The Play button sends MIDI generated from the current Compare Mode directly to the local PatternLab playback service at <code>127.0.0.1:8123</code>, which uses the configured FluidSynth executable and SF2 SoundFont. The GRID display button switches between the original four-band MIDI Velocity view and the ADX 6-accent preview. Each non-duplicate card can play either RAW only or RAW → Quantized. Every included section is repeated twice, and adjacent sections are separated by one quarter-note beat. Quantized playback uses the five playable levels of the JSON-defined 6-accent scheme. The displayed symbol, label, velocity range, and representative velocity come from accent_levels.json; an empty cell represents Rest. Flam grace notes marked for removal from subdivision are intentionally omitted there and belong to ORN; the main hit remains in the grid. Very weak hits remain regular GRID hits when they lie exactly on the selected grid. Only note-ons that already lie exactly on the selected grid are shown in SLOT view; off-grid note-ons are never snapped into a cell. When multiple retained on-grid hits occupy one slot/cell, the strongest velocity is shown.</p><p><strong>Global grid correction</strong> is an explicit optional preprocessing step. It can move only channel-10 note onsets that are within ±1, ±2, or ±3 ticks of the selected whole-song 16/32/8T/16T grid. A paired note-off is moved by the same amount so duration is preserved. Events farther from the grid are left untouched. The report previews how many onsets would change. Preview corrected re-runs PatternLab on the proposed corrected MIDI without modifying the source file. Hits that cross a one-bar boundary therefore move into the next pattern card, and duplicate/unique cards and pattern numbers are recalculated from the corrected timing. In corrected preview, duplicate/unique status is recalculated from the corrected timing. Corrected-preview duplicate bars are omitted from the gallery; only representative one-bar patterns remain, while their frequencies are preserved by the re-analysis. The corrected-preview cards are playable through the same local playback service; their RAW stage uses the corrected timing, and RAW → Quantized applies the selected card grid to that corrected timing. The button toggles back to the untouched original report. Save corrected MIDI downloads a separate corrected file, and the source MIDI is never overwritten.</p><p><strong>Per-card pattern save</strong> writes the currently active card state directly as ADT v2.3 Final using ORIENTATION=SLOT. The card's last selected Resolution is authoritative. Exact on-grid hits form the ADT grid; detected flam grace notes and ordinary off-grid hits are excluded from ADT and, when ORN is checked, written to the same-basename ORN sidecar. In corrected preview, export uses the corrected card data. RAW / QUANTIZED is display-only and does not alter export semantics. A blank pattern number produces TMP_#### from the card's current Pattern number.</p><p><strong>Source MIDI transport</strong> plays the exact original source MIDI through the same local playback service and highlights the currently sounding run in Condensed Bar Sequence. Timing follows the MIDI tempo map; the song is not reconstructed from extracted patterns.</p><p><strong>Pattern Transition Graph</strong> folds the actual one-bar song path into directed pattern-to-pattern relations. Node size reflects pattern occurrences and edge width reflects observed transition count. The graph layout always uses all observed transitions. All edges are shown by default; the selector can reduce the view to repeated edges only or suppress self-transitions. Graph nodes reuse the same hover preview and RAW click playback as other analysis references.</p><p>SLOT_MAP usage: <code>{html.escape(json.dumps(summary,ensure_ascii=False))}</code></p><p>The shared adc_rhythm_analysis module owns the complete subdivision decision: flam detection, grace-note exclusion, onset phase, note-duration evidence, and conservative filename hints. The same flam-filtered events are used for both phase and duration scoring. Beat anchors and the shared half-beat remain excluded from phase evidence.</p></details><script>(()=>{{
 const s=document.getElementById('matrix'),previewSvg=document.getElementById('matrix-preview'),m=document.getElementById('mode'),slotDisplay=document.getElementById('slot-display');slotDisplay.style.display='none';
 const BLOCK_DATA={block_data_json};
+const SOURCE_MIDI_NAME={json.dumps(path.name)};
+const SOURCE_MIDI_B64={json.dumps(source_midi_b64)};
+const SONG_TIMELINE={song_timeline_json};
 const printGallery=document.getElementById('print-gallery');
 const printButton=document.getElementById('print-report');
 const mainEl=document.querySelector('main');
@@ -1782,6 +1863,13 @@ function correctionVariant(){{
   const tolerance=document.getElementById('global-tolerance')?.value||'1';
   return GLOBAL_CORRECTION.variants[grid+':'+tolerance]||null;
 }}
+function activeBlockData(){{
+  if(correctionPreviewActive){{
+    const corrected=correctionVariant()?.preview?.block_data;
+    if(corrected)return corrected;
+  }}
+  return BLOCK_DATA;
+}}
 function formatOffsetCounts(offsets){{
   const parts=Object.entries(offsets||{{}}).map(([delta,count])=>`${{Number(delta)>0?'+':''}}${{delta}}: ${{count}}`);
   return parts.length?parts.join(' · '):'no shifted offsets';
@@ -1803,10 +1891,29 @@ function restoreCorrectionPreview(){{
   const button=document.getElementById('preview-corrected-midi');
   if(button)button.textContent='Preview corrected';
 }}
+function bindPreviewPlaybackControls(root){{
+  if(!root)return;
+  root.querySelectorAll('.pattern-controls').forEach(panel=>{{
+    if(panel.dataset.previewPlaybackBound==='1')return;
+    panel.dataset.previewPlaybackBound='1';
+    const subdivision=panel.querySelector('.subdivision-select');
+    if(subdivision){{
+      subdivision.addEventListener('change',()=>applySubdivision(panel));
+      applySubdivision(panel);
+    }}
+    bindGridFitCycle(panel);
+    bindSavePattern(panel);
+    const compareMode=panel.querySelector('.compare-mode-select');
+    if(compareMode)compareMode.addEventListener('change',()=>{{if(previewButton)void stopPreview();}});
+    const play=panel.querySelector('.play-compare');
+    if(play&&!play.disabled)play.addEventListener('click',e=>{{e.stopPropagation();void playComparison(panel)}});
+  }});
+}}
 function applyCorrectionPreview(){{
   const variant=correctionVariant();if(!variant||!variant.preview||!previewSvg)return;
   const p=variant.preview;
   previewSvg.innerHTML=p.body||'';
+  bindPreviewPlaybackControls(previewSvg);
   previewSvg.setAttribute('width',String(p.width||1));
   previewSvg.setAttribute('height',String(p.height||1));
   previewSvg.setAttribute('viewBox',`0 0 ${{p.width||1}} ${{p.height||1}}`);
@@ -1836,9 +1943,28 @@ if(globalTolerance)globalTolerance.addEventListener('change',()=>{{restoreCorrec
 document.getElementById('preview-corrected-midi')?.addEventListener('click',toggleCorrectionPreview);
 document.getElementById('save-corrected-midi')?.addEventListener('click',saveCorrectedMidi);
 refreshCorrectionPreview();
-function t(){{const v=s.classList.toggle('slotmode');m.textContent=v?(s.classList.contains('accentmode')?'GRID SLOT MAP · ACCENT':'GRID SLOT MAP · VELOCITY'):'RAW GM NOTES';slotDisplay.style.display=v?'inline-block':'none'}}
-function toggleSlotDisplay(){{const accent=s.classList.toggle('accentmode');slotDisplay.textContent=accent?'GRID: Accent':'GRID: Velocity';if(s.classList.contains('slotmode'))m.textContent=accent?'GRID SLOT MAP · ACCENT':'GRID SLOT MAP · VELOCITY';}}
-s.addEventListener('click',e=>{{if(!e.target.closest('.pattern-controls'))t()}});document.getElementById('toggle').addEventListener('click',t);slotDisplay.addEventListener('click',toggleSlotDisplay);const currentPattern=document.getElementById('current-pattern');
+function syncViewClass(className,on){{
+  [s,previewSvg].forEach(svg=>{{if(svg)svg.classList.toggle(className,on);}});
+}}
+function t(){{
+  const active=activeMatrixSvg();
+  const v=!active.classList.contains('slotmode');
+  syncViewClass('slotmode',v);
+  const accent=active.classList.contains('accentmode');
+  m.textContent=v?(accent?'GRID SLOT MAP · ACCENT':'GRID SLOT MAP · VELOCITY'):'RAW GM NOTES';
+  slotDisplay.style.display=v?'inline-block':'none';
+}}
+function toggleSlotDisplay(){{
+  const active=activeMatrixSvg();
+  const accent=!active.classList.contains('accentmode');
+  syncViewClass('accentmode',accent);
+  slotDisplay.textContent=accent?'GRID: Accent':'GRID: Velocity';
+  if(active.classList.contains('slotmode'))m.textContent=accent?'GRID SLOT MAP · ACCENT':'GRID SLOT MAP · VELOCITY';
+}}
+function matrixClickToggle(e){{if(!e.target.closest('.pattern-controls'))t();}}
+s.addEventListener('click',matrixClickToggle);
+if(previewSvg)previewSvg.addEventListener('click',matrixClickToggle);
+document.getElementById('toggle').addEventListener('click',t);slotDisplay.addEventListener('click',toggleSlotDisplay);const currentPattern=document.getElementById('current-pattern');
 const visibleCards=new Map();
 const cardObserver=new IntersectionObserver(entries=>{{
   entries.forEach(entry=>{{const panel=entry.target;entry.isIntersecting?visibleCards.set(panel,entry.intersectionRatio):visibleCards.delete(panel);}});
@@ -1989,6 +2115,158 @@ document.querySelectorAll('.transition-graph-filter').forEach(select=>{{
   select.addEventListener('change',()=>applyTransitionGraphFilter(select));
   applyTransitionGraphFilter(select);
 }});
+function xmlEscape(text){{return String(text??'').replace(/[&<>\"]/g,ch=>({{'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}}[ch]))}}
+function transitionExportGrid(data,subdiv,x,y,w,h){{
+  const cpb={{'16':4,'32':8,'8T':3,'16T':6}}[subdiv]||4;
+  const stepTicks=TPQ/cpb;
+  const cols=Math.max(1,Math.ceil(data.duration/stepTicks));
+  const slots=Array.isArray(data.slots)?data.slots:[];
+  const labelW=24,gridW=Math.max(1,w-labelW-4),rowH=Math.max(3,(h-4)/Math.max(1,slots.length)),cellW=gridW/cols;
+  const occupied=new Map();
+  data.events.forEach(ev=>{{
+    if(ev.excluded)return;const si=slotForNote(slots,ev.note);if(si<0)return;
+    const pos=ev.tick/stepTicks,cell=Math.round(pos);if(Math.abs(pos-cell)>1e-9||cell<0||cell>=cols)return;
+    const key=si+':'+cell,prev=occupied.get(key);if(!prev||ev.vel>prev.vel)occupied.set(key,ev);
+  }});
+  let out='<g class="mini-grid">';
+  for(let r=0;r<slots.length;r++){{
+    const yy=y+2+r*rowH;
+    out+=`<text x="${{(x+labelW-2).toFixed(1)}}" y="${{(yy+rowH*.72).toFixed(1)}}" text-anchor="end" font-size="${{Math.max(3.2,Math.min(5,rowH*.68)).toFixed(1)}}" fill="#555">${{xmlEscape(slots[r].label||String(r+1))}}</text>`;
+    for(let c=0;c<cols;c++){{
+      const xx=x+labelW+c*cellW,hit=occupied.has(r+':'+c),major=(c%cpb===0);
+      out+=`<rect x="${{xx.toFixed(1)}}" y="${{yy.toFixed(1)}}" width="${{Math.max(.5,cellW-.25).toFixed(1)}}" height="${{Math.max(.5,rowH-.25).toFixed(1)}}" fill="${{hit?'#7c3aed':'#ffffff'}}" stroke="${{major?'#8b949e':'#d8dee4'}}" stroke-width="${{major?.55:.25}}"/>`;
+    }}
+  }}
+  return out+'</g>';
+}}
+function downloadBlob(blob,name){{
+  const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1200);
+}}
+function exportTransitionGraphSvg(button){{
+  const panel=button.closest('.transition-graph-panel');if(!panel)return;
+  const source=panel.querySelector('.transition-graph');if(!source)return;
+  const clone=source.cloneNode(true);
+  const srcEls=[source,...source.querySelectorAll('*')],dstEls=[clone,...clone.querySelectorAll('*')];
+  const props=['fill','stroke','stroke-width','stroke-linecap','stroke-linejoin','opacity','font-family','font-size','font-weight','text-anchor','display','paint-order'];
+  for(let i=0;i<Math.min(srcEls.length,dstEls.length);i++){{
+    const cs=getComputedStyle(srcEls[i]);let css='';
+    for(const prop of props){{const v=cs.getPropertyValue(prop);if(v)css+=prop+':'+v+';';}}
+    dstEls[i].setAttribute('style',css);
+  }}
+  clone.querySelectorAll('.is-filtered').forEach(el=>el.remove());
+  clone.querySelectorAll('.transition-node').forEach(el=>el.removeAttribute('href'));
+  clone.setAttribute('xmlns','http://www.w3.org/2000/svg');
+  clone.setAttribute('width',source.viewBox.baseVal.width||560);clone.setAttribute('height',source.viewBox.baseVal.height||390);
+  clone.removeAttribute('class');clone.removeAttribute('role');clone.removeAttribute('aria-label');clone.removeAttribute('style');
+  const bg=document.createElementNS('http://www.w3.org/2000/svg','rect');bg.setAttribute('x','0');bg.setAttribute('y','0');bg.setAttribute('width','100%');bg.setAttribute('height','100%');bg.setAttribute('fill','#ffffff');clone.insertBefore(bg,clone.firstChild);
+  const out='<?xml version="1.0" encoding="UTF-8"?>\\n'+new XMLSerializer().serializeToString(clone);
+  downloadBlob(new Blob([out],{{type:'image/svg+xml;charset=utf-8'}}),(SOURCE_MIDI_NAME.replace(/\.[^.]+$/,'')||'pattern-transition')+'_transition.svg');
+}}
+function patternCardGridSpec(pattern,block){{
+  const data=BLOCK_DATA[String(block)];if(!data)return null;
+  const panel=patternPanel(block),subdiv=panel?.querySelector('.subdivision-select')?.value||'16';
+  const cpb={{'16':4,'32':8,'8T':3,'16T':6}}[subdiv]||4;
+  const stepTicks=TPQ/cpb,cols=Math.max(1,Math.ceil(data.duration/stepTicks));
+  const sourceSlots=Array.isArray(data.slots)?data.slots:[];
+  // Export cards use the musically familiar bottom-up drum layout: kick at the bottom.
+  const slots=[...sourceSlots].reverse();
+  const cells=new Map();
+  data.events.forEach(ev=>{{
+    if(ev.excluded)return;const sourceIndex=slotForNote(sourceSlots,ev.note);if(sourceIndex<0)return;
+    const pos=ev.tick/stepTicks,cell=Math.round(pos);
+    if(Math.abs(pos-cell)>1e-9||cell<0||cell>=cols)return;
+    const displayRow=sourceSlots.length-1-sourceIndex,key=displayRow+':'+cell;
+    const previous=cells.get(key);
+    if(previous===undefined||Number(ev.vel)>previous)cells.set(key,Number(ev.vel)||0);
+  }});
+  return {{title:'P'+String(pattern).padStart(3,'0'),subdiv,cpb,cols,slots,cells}};
+}}
+function exportAccentLevel(velocity){{
+  const scheme=ACCENT_SCHEMES['6-accent'];
+  if(!scheme||!Array.isArray(scheme.levels))return 5;
+  const value=Math.max(0,Math.min(127,Number(velocity)||0));
+  const level=scheme.levels.find(item=>value>=item.min_velocity&&value<=item.max_velocity);
+  return level?Number(level.index):5;
+}}
+function renderPatternCardCanvas(pattern,block){{
+  const spec=patternCardGridSpec(pattern,block);if(!spec)return null;
+  // Each exported note cell is square.  Card width therefore follows the selected
+  // subdivision instead of stretching every pattern to a fixed 1000 px canvas.
+  const cell=30,rowH=cell,labelW=48,left=20,right=20,top=66,bottom=20;
+  const gridLeft=left+labelW,gridTop=top,gridW=spec.cols*cell,gridH=spec.slots.length*rowH;
+  const W=gridLeft+gridW+right,H=Math.max(240,gridTop+gridH+bottom),gridRight=gridLeft+gridW;
+  const canvas=document.createElement('canvas');canvas.width=W;canvas.height=H;
+  const ctx=canvas.getContext('2d');
+  ctx.fillStyle='#ffffff';ctx.fillRect(0,0,W,H);
+  ctx.textBaseline='alphabetic';ctx.fillStyle='#111827';ctx.font='700 32px system-ui, -apple-system, Segoe UI, sans-serif';ctx.fillText(spec.title,left,40);
+  ctx.font='500 14px system-ui, -apple-system, Segoe UI, sans-serif';ctx.textAlign='right';ctx.textBaseline='middle';
+  // Rest is white; the five playable levels of the authoritative ADX 6-accent
+  // scheme are rendered as progressively stronger purple. Raw velocity numbers
+  // are intentionally not printed on these reusable pattern assets.
+  const accentFill=['#ffffff','#ede9fe','#ddd6fe','#c4b5fd','#8b5cf6','#6d28d9'];
+  for(let r=0;r<spec.slots.length;r++){{
+    const y=gridTop+r*rowH;
+    ctx.fillStyle='#4b5563';ctx.fillText(String(spec.slots[r].label||r+1),gridLeft-9,y+rowH/2);
+    for(let c=0;c<spec.cols;c++){{
+      const x=gridLeft+c*cell,key=r+':'+c,velocity=spec.cells.get(key);
+      const level=velocity===undefined?0:Math.max(1,Math.min(5,exportAccentLevel(velocity)));
+      ctx.fillStyle=accentFill[level];ctx.fillRect(x,y,cell,rowH);
+    }}
+  }}
+  // Exactly one crisp one-pixel grid; all coordinates are integer-sized cells
+  // and half-pixel stroke positions, avoiding uneven rasterized borders.
+  ctx.lineWidth=1;ctx.strokeStyle='#cbd5e1';ctx.beginPath();
+  for(let c=0;c<=spec.cols;c++){{const x=gridLeft+c*cell+0.5;ctx.moveTo(x,gridTop+0.5);ctx.lineTo(x,gridTop+gridH+0.5);}}
+  for(let r=0;r<=spec.slots.length;r++){{const y=gridTop+r*rowH+0.5;ctx.moveTo(gridLeft+0.5,y);ctx.lineTo(gridRight+0.5,y);}}
+  ctx.stroke();
+  // Beat boundaries keep the same 1 px thickness and differ only in tone.
+  ctx.strokeStyle='#94a3b8';ctx.beginPath();
+  for(let c=0;c<=spec.cols;c+=spec.cpb){{const x=gridLeft+c*cell+0.5;ctx.moveTo(x,gridTop+0.5);ctx.lineTo(x,gridTop+gridH+0.5);}}ctx.stroke();
+  return canvas;
+}}
+function canvasPngBlob(canvas){{return new Promise(resolve=>canvas.toBlob(resolve,'image/png'));}}
+function crc32(bytes){{
+  let crc=0xffffffff;
+  for(const b of bytes){{crc^=b;for(let k=0;k<8;k++)crc=(crc>>>1)^((crc&1)?0xedb88320:0);}}
+  return (crc^0xffffffff)>>>0;
+}}
+function pushLe16(a,v){{a.push(v&255,(v>>>8)&255)}}
+function pushLe32(a,v){{a.push(v&255,(v>>>8)&255,(v>>>16)&255,(v>>>24)&255)}}
+function makeStoredZip(files){{
+  // PNG is already compressed; ZIP method 0 keeps this dependency-free and exact.
+  const enc=new TextEncoder(),parts=[],central=[];let offset=0;
+  for(const file of files){{
+    const name=enc.encode(file.name),data=file.bytes,crc=crc32(data),local=[];
+    pushLe32(local,0x04034b50);pushLe16(local,20);pushLe16(local,0x0800);pushLe16(local,0);pushLe16(local,0);pushLe16(local,0);
+    pushLe32(local,crc);pushLe32(local,data.length);pushLe32(local,data.length);pushLe16(local,name.length);pushLe16(local,0);local.push(...name);
+    parts.push(new Uint8Array(local),data);
+    const cen=[];pushLe32(cen,0x02014b50);pushLe16(cen,20);pushLe16(cen,20);pushLe16(cen,0x0800);pushLe16(cen,0);pushLe16(cen,0);pushLe16(cen,0);
+    pushLe32(cen,crc);pushLe32(cen,data.length);pushLe32(cen,data.length);pushLe16(cen,name.length);pushLe16(cen,0);pushLe16(cen,0);pushLe16(cen,0);pushLe16(cen,0);pushLe32(cen,0);pushLe32(cen,offset);cen.push(...name);central.push(new Uint8Array(cen));
+    offset+=local.length+data.length;
+  }}
+  const centralOffset=offset,centralSize=central.reduce((n,p)=>n+p.length,0),end=[];
+  parts.push(...central);pushLe32(end,0x06054b50);pushLe16(end,0);pushLe16(end,0);pushLe16(end,files.length);pushLe16(end,files.length);pushLe32(end,centralSize);pushLe32(end,centralOffset);pushLe16(end,0);parts.push(new Uint8Array(end));
+  return new Blob(parts,{{type:'application/zip'}});
+}}
+async function exportPatternCardsZip(button){{
+  const panel=button.closest('.transition-graph-panel');if(!panel)return;
+  const graph=panel.querySelector('.transition-graph');if(!graph)return;
+  const nodes=[...graph.querySelectorAll('.transition-node[data-pattern]')].sort((a,b)=>Number(a.dataset.pattern)-Number(b.dataset.pattern));if(!nodes.length)return;
+  const oldText=button.textContent;button.disabled=true;button.textContent='Building ZIP…';
+  try{{
+    const files=[];
+    for(const node of nodes){{
+      const pattern=Number(node.dataset.pattern),canvas=renderPatternCardCanvas(pattern,node.dataset.jumpBlock);if(!canvas)continue;
+      const blob=await canvasPngBlob(canvas);if(!blob)continue;
+      files.push({{name:'P'+String(pattern).padStart(3,'0')+'.png',bytes:new Uint8Array(await blob.arrayBuffer())}});
+    }}
+    if(!files.length)throw new Error('No pattern cards could be rendered.');
+    const zip=makeStoredZip(files),base=(SOURCE_MIDI_NAME.replace(/\.[^.]+$/,'')||'patterns');downloadBlob(zip,base+'_pattern-cards.zip');
+  }}catch(error){{alert('Pattern card ZIP export failed.\\n\\n'+error.message);}}
+  finally{{button.disabled=false;button.textContent=oldText;}}
+}}
+document.querySelectorAll('.transition-export-svg').forEach(button=>button.addEventListener('click',()=>exportTransitionGraphSvg(button)));
+document.querySelectorAll('.transition-export-cards').forEach(button=>button.addEventListener('click',()=>{{void exportPatternCardsZip(button);}}));
 bindPatternReferences();
 bindTransitionNodeDragging();
 function csvCell(value){{const x=String(value??'');return /[",\\n]/.test(x)?'"'+x.replace(/"/g,'""')+'"':x}}
@@ -2073,6 +2351,120 @@ function makeComparisonMidi(data,subdiv,compareMode='quantized'){{
   file.push(...asciiBytes('MTrk'));writeU32(file,track.length);file.push(...track);
   return new Uint8Array(file);
 }}
+const songPlayButton=document.getElementById('song-play');
+const songStopButton=document.getElementById('song-stop');
+const songProgress=document.querySelector('.song-progress span');
+const songPosition=document.getElementById('song-position');
+const songNow=document.getElementById('song-now');
+let songAnimationFrame=null,songEndTimer=null,songStartedAt=0,songPlaying=false,songOffsetSeconds=0;
+function decodeBase64Bytes(text){{
+  const raw=atob(text),bytes=new Uint8Array(raw.length);
+  for(let i=0;i<raw.length;i++)bytes[i]=raw.charCodeAt(i);
+  return bytes;
+}}
+async function loadSourceMidiBytes(){{
+  // If the report is served over HTTP, prefer the sibling MIDI file. Direct
+  // file:// reports cannot fetch sibling files in modern browsers, so fall
+  // back to the exact source bytes embedded when PatternLab made this HTML.
+  if(location.protocol==='http:'||location.protocol==='https:'){{
+    try{{
+      const response=await fetch(encodeURI(SOURCE_MIDI_NAME),{{cache:'no-store'}});
+      if(response.ok)return new Uint8Array(await response.arrayBuffer());
+    }}catch(_e){{}}
+  }}
+  return decodeBase64Bytes(SOURCE_MIDI_B64);
+}}
+function readMidiU16(bytes,p){{return (bytes[p]<<8)|bytes[p+1]}}
+function readMidiU32(bytes,p){{return ((bytes[p]<<24)>>>0)|(bytes[p+1]<<16)|(bytes[p+2]<<8)|bytes[p+3]}}
+function readMidiVar(bytes,p){{let v=0,b=0,n=0;do{{if(p+n>=bytes.length)throw new Error('Unexpected end of MIDI VLQ');b=bytes[p+n++];v=(v<<7)|(b&127);}}while((b&128)&&n<5);return [v,n]}}
+function midiVarBytes(v){{const a=[];writeVar(a,Math.max(0,Math.round(v)));return a}}
+function parseMidiTrack(bytes,start,length){{
+  const end=start+length,events=[];let p=start,tick=0,running=0;
+  while(p<end){{
+    const [delta,dn]=readMidiVar(bytes,p);p+=dn;tick+=delta;if(p>=end)break;
+    let status=bytes[p];if(status<0x80){{if(!running)throw new Error('Invalid running status');status=running;}}else{{p++;if(status<0xf0)running=status;else if(status===0xf0||status===0xf7)running=0;}}
+    if(status===0xff){{const type=bytes[p++],[len,ln]=readMidiVar(bytes,p);p+=ln;const data=[...bytes.slice(p,p+len)];p+=len;events.push({{tick,kind:'meta',type,bytes:[0xff,type,...midiVarBytes(len),...data]}});if(type===0x2f)break;continue;}}
+    if(status===0xf0||status===0xf7){{const [len,ln]=readMidiVar(bytes,p);p+=ln;const data=[...bytes.slice(p,p+len)];p+=len;events.push({{tick,kind:'sysex',status,bytes:[status,...midiVarBytes(len),...data]}});continue;}}
+    const hi=status&0xf0,ch=status&15,n=(hi===0xc0||hi===0xd0)?1:2,data=[];for(let i=0;i<n;i++){{if(p>=end)throw new Error('Truncated MIDI channel event');data.push(bytes[p++]);}}
+    events.push({{tick,kind:'channel',status,hi,ch,d1:data[0]??0,d2:data[1]??0,bytes:[status,...data]}});
+  }}
+  return events;
+}}
+function buildSlicedMidiTrack(events,startTick){{
+  const prefix=[],latestMeta=new Map(),latestCC=new Map(),latestProgram=new Map(),latestPitch=new Map(),latestPressure=new Map(),activeNotes=new Map(),sysex=[];
+  for(const ev of events){{
+    if(ev.tick>=startTick)continue;
+    if(ev.kind==='meta'&&(ev.type===0x51||ev.type===0x58||ev.type===0x59))latestMeta.set(ev.type,ev);
+    else if(ev.kind==='sysex')sysex.push(ev);
+    else if(ev.kind==='channel'){{const key=ev.ch+':'+ev.d1;if(ev.hi===0xb0)latestCC.set(key,ev);else if(ev.hi===0xc0)latestProgram.set(ev.ch,ev);else if(ev.hi===0xe0)latestPitch.set(ev.ch,ev);else if(ev.hi===0xd0)latestPressure.set(ev.ch,ev);else if(ev.hi===0x90&&ev.d2>0)activeNotes.set(key,ev);else if(ev.hi===0x80||(ev.hi===0x90&&ev.d2===0))activeNotes.delete(key);}}
+  }}
+  latestMeta.forEach(ev=>prefix.push(ev));sysex.forEach(ev=>prefix.push(ev));latestCC.forEach(ev=>prefix.push(ev));latestProgram.forEach(ev=>prefix.push(ev));latestPitch.forEach(ev=>prefix.push(ev));latestPressure.forEach(ev=>prefix.push(ev));activeNotes.forEach(ev=>prefix.push({{...ev,bytes:[0x90|ev.ch,ev.d1,Math.max(1,ev.d2)]}}));
+  const kept=events.filter(ev=>ev.tick>=startTick&&!(ev.kind==='meta'&&ev.type===0x2f)).map(ev=>({{...ev,tick:ev.tick-startTick}})),merged=[...prefix.map((ev,i)=>({{...ev,tick:0,_prefix:i}})),...kept];
+  merged.sort((a,b)=>a.tick-b.tick||((a._prefix??1e9)-(b._prefix??1e9)));const track=[];let last=0;for(const ev of merged){{writeVar(track,Math.max(0,ev.tick-last));last=ev.tick;track.push(...ev.bytes);}}writeVar(track,0);track.push(0xff,0x2f,0x00);return track;
+}}
+function sliceMidiFromTick(bytes,startTick){{
+  startTick=Math.max(0,Math.round(startTick||0));if(startTick<=0)return bytes;if(String.fromCharCode(...bytes.slice(0,4))!=='MThd')throw new Error('Invalid MIDI header');
+  const headerLen=readMidiU32(bytes,4),format=readMidiU16(bytes,8),ntrks=readMidiU16(bytes,10),division=readMidiU16(bytes,12);let p=8+headerLen,tracks=[];
+  for(let i=0;i<ntrks;i++){{if(String.fromCharCode(...bytes.slice(p,p+4))!=='MTrk')throw new Error('Missing MIDI track');const len=readMidiU32(bytes,p+4);tracks.push(parseMidiTrack(bytes,p+8,len));p+=8+len;}}
+  const file=[...asciiBytes('MThd')];writeU32(file,6);writeU16(file,format);writeU16(file,tracks.length);writeU16(file,division);tracks.forEach(events=>{{const tr=buildSlicedMidiTrack(events,startTick);file.push(...asciiBytes('MTrk'));writeU32(file,tr.length);file.push(...tr);}});return new Uint8Array(file);
+}}
+function formatSongTime(seconds){{
+  seconds=Math.max(0,Number(seconds)||0);
+  const mm=Math.floor(seconds/60),ss=Math.floor(seconds%60);
+  return `${{mm}}:${{String(ss).padStart(2,'0')}}`;
+}}
+function clearSongHighlight(){{
+  document.querySelectorAll('.sequence-run.song-active').forEach(el=>el.classList.remove('song-active'));
+}}
+function resetSongTransport(){{
+  if(songAnimationFrame){{cancelAnimationFrame(songAnimationFrame);songAnimationFrame=null;}}
+  if(songEndTimer){{clearTimeout(songEndTimer);songEndTimer=null;}}
+  songPlaying=false;songStartedAt=0;songOffsetSeconds=0;clearSongHighlight();
+  if(songProgress)songProgress.style.width='0%';
+  if(songPlayButton){{songPlayButton.disabled=false;songPlayButton.textContent='▶ Song';}}
+  if(songStopButton)songStopButton.disabled=true;
+  if(songPosition)songPosition.textContent=`0:00 / ${{formatSongTime(SONG_TIMELINE.duration)}}`;
+  if(songNow)songNow.textContent='—';
+}}
+function updateSongTransport(){{
+  if(!songPlaying)return;
+  const elapsed=Math.min(SONG_TIMELINE.duration,Math.max(0,songOffsetSeconds+(performance.now()-songStartedAt)/1000));
+  const ratio=SONG_TIMELINE.duration>0?elapsed/SONG_TIMELINE.duration:0;
+  if(songProgress)songProgress.style.width=`${{ratio*100}}%`;
+  if(songPosition)songPosition.textContent=`${{formatSongTime(elapsed)}} / ${{formatSongTime(SONG_TIMELINE.duration)}}`;
+  const bar=SONG_TIMELINE.bars.find(item=>elapsed>=item.start&&elapsed<item.end)||null;
+  clearSongHighlight();
+  if(bar){{
+    const run=[...document.querySelectorAll('.sequence-run[data-start-bar][data-end-bar]')].find(el=>bar.bar>=Number(el.dataset.startBar)&&bar.bar<=Number(el.dataset.endBar));
+    if(run)run.classList.add('song-active');
+    if(songNow)songNow.textContent=bar.pattern>0?`Bar ${{bar.bar}} · P${{String(bar.pattern).padStart(3,'0')}}`:`Bar ${{bar.bar}}`;
+  }} else if(songNow)songNow.textContent='—';
+  if(elapsed<SONG_TIMELINE.duration)songAnimationFrame=requestAnimationFrame(updateSongTransport);
+}}
+async function stopSong(){{
+  try{{await fetch(playbackUrl('/stop'),{{method:'POST'}});}}catch(_e){{}}
+  resetPreviewButton();resetSongTransport();
+}}
+async function playSourceSong(startBar=1){{
+  await stopPreview();
+  if(!SOURCE_MIDI_B64){{alert('Source MIDI is unavailable in this report.');return;}}
+  const barInfo=SONG_TIMELINE.bars.find(item=>item.bar===Number(startBar))||SONG_TIMELINE.bars[0]||{{tick:0,start:0,bar:1}};
+  if(songPlaying){{try{{await fetch(playbackUrl('/stop'),{{method:'POST'}});}}catch(_e){{}}resetSongTransport();}}
+  if(songPlayButton){{songPlayButton.disabled=true;songPlayButton.textContent='Connecting…';}}
+  try{{
+    const source=await loadSourceMidiBytes(),bytes=barInfo.tick>0?sliceMidiFromTick(source,barInfo.tick):source;
+    const response=await fetch(playbackUrl('/play'),{{method:'POST',headers:{{'Content-Type':'audio/midi'}},body:bytes}}),message=await response.text();
+    if(!response.ok)throw new Error(message||`HTTP ${{response.status}}`);
+    songPlaying=true;songOffsetSeconds=Number(barInfo.start)||0;songStartedAt=performance.now();
+    if(songPlayButton){{songPlayButton.disabled=true;songPlayButton.textContent=startBar>1?`▶ From bar ${{barInfo.bar}}`:'▶ Playing';}}if(songStopButton)songStopButton.disabled=false;
+    updateSongTransport();songEndTimer=setTimeout(resetSongTransport,Math.ceil((Math.max(0,SONG_TIMELINE.duration-songOffsetSeconds)+1.0)*1000));
+  }}catch(error){{resetSongTransport();alert('Source MIDI playback failed.\\n\\nStart play_server.py (or start-adx-playback.cmd).\\n\\n'+error.message);}}
+}}
+if(songPlayButton)songPlayButton.addEventListener('click',()=>void playSourceSong(1));
+if(songStopButton)songStopButton.addEventListener('click',()=>void stopSong());
+document.querySelectorAll('.sequence-play-from[data-start-bar]').forEach(button=>button.addEventListener('click',event=>{{event.preventDefault();event.stopPropagation();hidePatternHover();void playSourceSong(Number(button.dataset.startBar)||1);}}));
+resetSongTransport();
+
 let previewButton=null;
 let previewEndTimer=null;
 let previewAnimationFrame=null;
@@ -2096,6 +2488,7 @@ function resetPreviewButton(){{
 async function stopPreview(){{
   try{{await fetch(playbackUrl('/stop'),{{method:'POST'}});}}catch(_e){{}}
   resetPreviewButton();
+  resetSongTransport();
 }}
 function comparisonSections(data,compareMode){{
   const sections=[];let cursor=0;
@@ -2129,7 +2522,7 @@ function updatePlaybackVisual(){{
 }}
 async function playAnalysisRaw(panel){{
   await stopPreview();
-  const data=BLOCK_DATA[String(panel.dataset.block)];
+  const data=activeBlockData()[String(panel.dataset.block)];
   if(!data){{alert('FluidSynth playback is unavailable for this pattern.');return;}}
   const subdiv=panel.querySelector('.subdivision-select')?.value||'16';
   const bytes=makeComparisonMidi(data,subdiv,'raw');
@@ -2145,7 +2538,7 @@ async function playComparison(panel){{
   const button=panel.querySelector('.play-compare');
   if(previewButton===button){{await stopPreview();return;}}
   await stopPreview();
-  const data=BLOCK_DATA[String(panel.dataset.block)];
+  const data=activeBlockData()[String(panel.dataset.block)];
   if(!data){{alert('FluidSynth playback is unavailable for this card.');return;}}
   const subdiv=panel.querySelector('.subdivision-select')?.value||'16';
   const compareMode=panel.querySelector('.compare-mode-select')?.value||'quantized';
@@ -2170,6 +2563,124 @@ async function playComparison(panel){{
     button.disabled=false;
     if(!previewButton)button.textContent='▶ Play';
   }}
+}}
+function patternNameForSave(panel){{
+  const input=panel.querySelector('.start-number');
+  const raw=(input?.value||'').trim();
+  if(raw){{
+    if(!/^\d{{1,4}}$/.test(raw)||Number(raw)<1||Number(raw)>9999)throw new Error('No. must be 0001–9999, or left blank for a TMP name.');
+    const genre=(panel.querySelector('.genre-select')?.value||'DRM').toUpperCase();
+    return `${{genre}}_${{String(Number(raw)).padStart(4,'0')}}`;
+  }}
+  const patternNo=Number(panel.dataset.patternNo)||Number(panel.dataset.block)||1;
+  return `TMP_${{String(Math.max(1,patternNo)).padStart(4,'0')}}`;
+}}
+function slotIndexForNote(data,note){{
+  return (data.slots||[]).findIndex(slot=>(slot.notes||[]).includes(Number(note)));
+}}
+function accentSymbolForVelocity(velocity){{
+  const levels=ACCENT_SCHEMES['6-accent']?.levels||[];
+  const v=Math.max(1,Math.min(127,Number(velocity)||1));
+  const level=levels.find(item=>v>=Number(item.min_velocity)&&v<=Number(item.max_velocity));
+  return level?.symbol||'o';
+}}
+function symbolRank(symbol){{
+  return ['.','-','x','o','^','@'].indexOf(symbol);
+}}
+function cardExportModel(panel){{
+  const data=activeBlockData()[String(panel.dataset.block)];
+  if(!data)throw new Error('Pattern data are unavailable for this card.');
+  const subdiv=panel.querySelector('.subdivision-select')?.value||'16';
+  const cellsPerBeat={{'16':4,'32':8,'8T':3,'16T':6}}[subdiv];
+  if(!cellsPerBeat)throw new Error(`Unsupported subdivision: ${{subdiv}}`);
+  const duration=Math.max(1,Number(data.duration)||1);
+  const length=Math.max(1,Math.round((duration/Number(TPQ))*cellsPerBeat));
+  const sourceStepTicks=Number(TPQ)/cellsPerBeat;
+  const canonicalStepTicks=240/cellsPerBeat;
+  const rows=(data.slots||[]).map(()=>Array(length).fill('.'));
+  const ornaments=[];
+  const ornEnabled=!!panel.querySelector('.orn-check')?.checked;
+  for(const event of (data.events||[])){{
+    const tick=Number(event.tick)||0;
+    const stepPos=tick/sourceStepTicks;
+    const nearest=Math.round(stepPos);
+    const exact=Math.abs(stepPos-nearest)<=1e-9 && nearest>=0 && nearest<length;
+    const slotIndex=slotIndexForNote(data,event.note);
+    const isFlam=!!event.excluded;
+    if(exact&&!isFlam&&slotIndex>=0){{
+      const symbol=accentSymbolForVelocity(event.vel);
+      if(symbolRank(symbol)>symbolRank(rows[slotIndex][nearest]))rows[slotIndex][nearest]=symbol;
+      continue;
+    }}
+    if(!ornEnabled)continue;
+    // FLAM events retain their detected main-hit target. Ordinary off-grid
+    // notes use the nearest grid step only as an ORN reference point.
+    if(isFlam&&event.orn){{
+      let targetStep=Math.round(Number(event.orn.main_tick||0)/sourceStepTicks);
+      let loopWrap=!!event.orn.across_loop;
+      if(targetStep>=length){{targetStep=0;loopWrap=true;}}
+      const targetSourceTick=loopWrap?duration:targetStep*sourceStepTicks;
+      const offset=Math.round((tick-targetSourceTick)*240/Number(TPQ));
+      ornaments.push({{kind:'FLAM',targetStep,slot:event.orn.family||((data.slots||[])[slotIndex]?.label)||`N${{event.note}}`,offset,velocity:Number(event.vel)||1,loopWrap,confidence:event.orn.confidence||'EXACT'}});
+    }}else if(!exact){{
+      let targetStep=nearest,loopWrap=false,targetSourceTick=nearest*sourceStepTicks;
+      if(targetStep>=length){{targetStep=0;loopWrap=true;targetSourceTick=duration;}}
+      if(targetStep<0){{targetStep=0;targetSourceTick=0;}}
+      const offset=Math.round((tick-targetSourceTick)*240/Number(TPQ));
+      ornaments.push({{kind:'NOTE',targetStep,slot:((data.slots||[])[slotIndex]?.label)||`N${{event.note}}`,offset,velocity:Number(event.vel)||1,loopWrap,confidence:'EXACT'}});
+    }}
+  }}
+  ornaments.sort((a,b)=>a.targetStep-b.targetStep||String(a.slot).localeCompare(String(b.slot))||a.offset-b.offset||a.velocity-b.velocity||String(a.kind).localeCompare(String(b.kind)));
+  return {{data,subdiv,length,rows,ornaments,canonicalStepTicks,loopTicks:Math.round(length*canonicalStepTicks)}};
+}}
+function sourceTextForSave(panel){{
+  let text=`${{SOURCE_MIDI_NAME}}:${{panel.dataset.startBar}}-${{panel.dataset.endBar}}`;
+  if(correctionPreviewActive){{
+    const grid=document.getElementById('global-grid')?.value||'';
+    const tol=document.getElementById('global-tolerance')?.value||'';
+    text+=` [PatternLab corrected ${{grid}} ±${{tol}} tick]`;
+  }}
+  return text;
+}}
+function renderAdtForCard(panel,name,model){{
+  const meter=(panel.dataset.timeSig||'4/4').split('→')[0];
+  const slotMap=model.data.slot_map_name||panel.dataset.slotMap||'LEGACY';
+  const lines=['; ADT v2.3','; Drum Pattern Exchange Format',`NAME=${{name}}`,`SOURCE=${{sourceTextForSave(panel)}}`,`TIME_SIG=${{meter}}`,`SUBDIV=${{model.subdiv}}`,`LENGTH=${{model.length}}`,`SLOT_MAP_ID=${{slotMap}}`,'ORIENTATION=SLOT','','[DATA]'];
+  model.rows.forEach(row=>lines.push(row.join('')));
+  return lines.join('\\n')+'\\n';
+}}
+function renderOrnForCard(panel,name,model){{
+  const lines=['; ORN v1.0',`; NAME=${{name}}`,`; SOURCE=${{sourceTextForSave(panel)}}`,'UNIT=TICK',`SUBDIV=${{model.subdiv}}`,`LENGTH=${{model.length}}`,`LOOP_TICKS=${{model.loopTicks}}`,'','[EVENTS]'];
+  for(const event of model.ornaments){{
+    let line=`${{event.kind}} TARGET_STEP=${{event.targetStep}} SLOT=${{event.slot}} OFFSET_TICKS=${{event.offset}} VELOCITY=${{event.velocity}}`;
+    if(event.loopWrap)line+=' LOOP_WRAP=1';
+    line+=` ; confidence=${{event.confidence}}`;
+    lines.push(line);
+  }}
+  return lines.join('\\n')+'\\n';
+}}
+function downloadText(text,name){{
+  downloadBlob(new Blob([text],{{type:'text/plain;charset=utf-8'}}),name);
+}}
+function savePattern(panel){{
+  try{{
+    const name=patternNameForSave(panel);
+    const model=cardExportModel(panel);
+    downloadText(renderAdtForCard(panel,name,model),name+'.ADT');
+    if(panel.querySelector('.orn-check')?.checked){{
+      // Delay the second browser download slightly so both same-basename files
+      // are reliably offered by browsers that serialize download gestures.
+      setTimeout(()=>downloadText(renderOrnForCard(panel,name,model),name+'.ORN'),120);
+    }}
+    const preview=panel.querySelector('.name-preview');
+    if(preview)preview.textContent=name+(panel.querySelector('.orn-check')?.checked?' · ADT+ORN saved':' · ADT saved');
+  }}catch(error){{alert('Cannot save pattern.\\n\\n'+error.message);}}
+}}
+function bindSavePattern(panel){{
+  const button=panel?.querySelector('.save-pattern');
+  if(!button||button.disabled||button.dataset.bound==='1')return;
+  button.dataset.bound='1';
+  button.addEventListener('click',event=>{{event.preventDefault();event.stopPropagation();savePattern(panel);}});
 }}
 function allPanels(){{return [...document.querySelectorAll('.pattern-controls')]}}
 function numberablePanels(){{
@@ -2374,24 +2885,29 @@ function updateRawDeviation(card, selected){{
   card.querySelectorAll('.raw-event[data-tick-offset]').forEach(el=>{{
     const offset=Number(el.dataset.tickOffset)||0;
     const nearest=Math.round(offset/stepTicks)*stepTicks;
-    const ratio=Math.abs(offset-nearest)/stepTicks;
+    const delta=offset-nearest;
+    const offGrid=Math.abs(delta)>1e-9;
+    const ratio=Math.abs(delta)/stepTicks;
     el.classList.remove('deviation-aligned','deviation-near','deviation-moderate','deviation-far');
     const cls=ratio<=0.05?'deviation-aligned':ratio<=0.15?'deviation-near':ratio<=0.30?'deviation-moderate':'deviation-far';
     el.classList.add(cls);
+
+    const ornamental=el.classList.contains('ornnote')||el.classList.contains('ornduration');
+    const ordinary=!ornamental&&!el.classList.contains('unknown');
+    const omitted=offGrid&&ordinary;
     if(el.classList.contains('rawhit')){{
-      const offGrid=Math.abs(offset-nearest)>1e-9;
-      const ordinary=!el.classList.contains('ornnote')&&!el.classList.contains('unknown');
-      const omitted=offGrid&&ordinary;
       el.classList.toggle('grid-omitted',omitted);
       if(omitted)omittedCount++;
-      const title=el.querySelector('title');
-      if(title){{
-        if(!title.dataset.baseTitle)title.dataset.baseTitle=title.textContent.replace(/; GRID omitted \([^;]+$/,'');
-        const delta=offset-nearest;
-        const nearestText=Number.isInteger(nearest)?String(nearest):nearest.toFixed(3).replace(/0+$/,'').replace(/\.$/,'');
-        const deltaText=(delta>=0?'+':'')+(Number.isInteger(delta)?String(delta):delta.toFixed(3).replace(/0+$/,'').replace(/\.$/,''));
-        title.textContent=title.dataset.baseTitle+(omitted?`; GRID omitted (${{selected}}): off-grid by ${{deltaText}} tick(s); nearest grid ${{nearestText}}`:'');
-      }}
+    }}
+
+    // Keep hover text synchronized with the card's currently selected grid.
+    // Both the note-on circle and its duration line report the recalculated deviation.
+    const title=el.querySelector('title');
+    if(title){{
+      if(!title.dataset.baseTitle)title.dataset.baseTitle=title.textContent.replace(/; GRID omitted \([^;]+$/,'');
+      const nearestText=Number.isInteger(nearest)?String(nearest):nearest.toFixed(3).replace(/0+$/,'').replace(/\.$/,'');
+      const deltaText=(delta>=0?'+':'')+(Number.isInteger(delta)?String(delta):delta.toFixed(3).replace(/0+$/,'').replace(/\.$/,''));
+      title.textContent=title.dataset.baseTitle+(omitted?`; GRID omitted (${{selected}}): off-grid by ${{deltaText}} tick(s); nearest grid ${{nearestText}}`:'');
     }}
   }});
   const warning=card.querySelector('.grid-omission-warning');
@@ -2404,7 +2920,9 @@ function updateRawDeviation(card, selected){{
 function applySubdivision(panel){{
   const select=panel.querySelector('.subdivision-select');
   if(!select || select.disabled)return;
-  const card=document.querySelector(`g.pattern-card[data-block="${{panel.dataset.block}}"]`);
+  // Resolve the card from this panel itself so the same code works for both
+  // the original SVG and the dynamically rendered corrected-preview SVG.
+  const card=panel.closest('g.pattern-card');
   if(!card)return;
   const selected=select.value;
   card.querySelectorAll('.subdiv-layer').forEach(layer=>{{layer.classList.toggle('active',layer.dataset.subdiv===selected);}});
@@ -2412,6 +2930,22 @@ function applySubdivision(panel){{
   if(summary){{const cells={{'16':4,'32':8,'8T':3,'16T':6}}[selected]||4;summary.textContent=(summary.dataset.prefix||'')+cells+' cells/beat';}}
   panel.querySelectorAll('.fit-item').forEach(item=>item.classList.toggle('selected',item.dataset.subdiv===selected));
   updateRawDeviation(card,selected);
+}}
+const GRID_FIT_CYCLE=['16','32','8T','16T'];
+function cycleCardGrid(panel){{
+  const select=panel?.querySelector('.subdivision-select');
+  if(!select||select.disabled)return;
+  const current=GRID_FIT_CYCLE.indexOf(select.value);
+  select.value=GRID_FIT_CYCLE[(current+1+GRID_FIT_CYCLE.length)%GRID_FIT_CYCLE.length];
+  applySubdivision(panel);
+  calculateNames(false);
+  if(previewButton)void stopPreview();
+}}
+function bindGridFitCycle(panel){{
+  const button=panel?.querySelector('.grid-fit-cycle');
+  if(!button||button.dataset.bound==='1')return;
+  button.dataset.bound='1';
+  button.addEventListener('click',event=>{{event.preventDefault();event.stopPropagation();cycleCardGrid(panel);}});
 }}
 allPanels().forEach(panel=>{{
   const input=panel.querySelector('.start-number');
@@ -2434,6 +2968,8 @@ allPanels().forEach(panel=>{{
   panel.querySelector('.export-check').addEventListener('change',()=>calculateNames(false));
   const subdivision=panel.querySelector('.subdivision-select');
   if(subdivision){{subdivision.addEventListener('change',()=>{{applySubdivision(panel);calculateNames(false)}});applySubdivision(panel);}}
+  bindGridFitCycle(panel);
+  bindSavePattern(panel);
   const compareMode=panel.querySelector('.compare-mode-select');
   if(compareMode)compareMode.addEventListener('change',()=>{{if(previewButton)void stopPreview();}});
   const play=panel.querySelector('.play-compare');
