@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """Local PatternLab playback service using FluidSynth and an SF2 SoundFont.
 
-Version: 260819a
+Version: 260903c
 """
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ except ImportError:
     MidiFile = MidiTrack = Message = MetaMessage = None
 
 SCRIPT_NAME = "play_server.py"
-VERSION = "260819a"
+VERSION = "260903c"
 VERSION_TEXT = f"{SCRIPT_NAME} {VERSION}"
 
 HOST = "127.0.0.1"
@@ -555,6 +555,13 @@ class FileBrowser:
 def make_handler(player: PlayerState, directory: Path, browser: FileBrowser, report_selected: bool, pattern_cfg: dict):
     class Handler(SimpleHTTPRequestHandler):
         def __init__(self,*args,**kwargs): super().__init__(*args,directory=str(directory),**kwargs)
+        def end_headers(self):
+            request_path=urlparse(self.path).path
+            if Path(request_path).suffix.lower() in {'.html','.htm'}:
+                self.send_header('Cache-Control','no-store, no-cache, must-revalidate, max-age=0')
+                self.send_header('Pragma','no-cache')
+                self.send_header('Expires','0')
+            super().end_headers()
         def _send_cors_headers(self):
             if self.headers.get('Origin')=='null': self.send_header('Access-Control-Allow-Origin','null'); self.send_header('Vary','Origin')
         def _send_text(self,status:int,message:str):
@@ -759,7 +766,7 @@ def main() -> int:
     if report_path is not None:
         from urllib.parse import quote
         report_url_path = quote(report_path.name, safe="/")
-        open_url = base_url + report_url_path
+        open_url = base_url + report_url_path + f'?run={secrets.token_hex(6)}'
     else:
         open_url = base_url
 
