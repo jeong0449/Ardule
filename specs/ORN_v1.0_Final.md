@@ -5,7 +5,19 @@
 Version: **1.0**\
 Status: **Current**\
 Created: **2026-08-01**\
-Last Updated: **2026-08-17**
+Last Updated: **2026-09-04**
+
+------------------------------------------------------------------------
+
+## Reality-alignment update --- 2026-09-04
+
+This revision aligns the written v1.0 specification with ORN files
+already present in the ADX corpus and accepted by the existing player.
+In addition to `FLAM`, the `NOTE` record is formally documented as a
+v1.0 event for independent off-grid notes with preserved microtiming.
+The file version remains **1.0** because this update documents an
+already deployed v1.0 representation rather than introducing a new
+on-disk syntax.
 
 ------------------------------------------------------------------------
 
@@ -20,11 +32,22 @@ and should not be forced into a neighboring step.
 
 ORN preserves those details separately.
 
-In ORN v1.0, the defined ornament event is a flam grace note. A detected
-grace note is excluded from ADT/ADP grid quantization and stored in ORN
-with its tick offset, velocity, target step, and slot family. During
-playback, the ADT or ADP regular grid is combined with the optional
-same-basename ORN sidecar.
+ORN v1.0 defines two event types for performance details outside the
+regular grid: `FLAM` and `NOTE`.
+
+A `FLAM` record stores a flam grace note that decorates a main hit on
+the regular grid. The grace note is excluded from ADT/ADP grid
+quantization and stored in ORN with its tick offset, velocity, target
+step, and slot family.
+
+A `NOTE` record stores an independent note whose performed timing lies
+between regular-grid positions and should not be forced onto a
+neighboring grid step. `TARGET_STEP` identifies the reference grid step
+and `OFFSET_TICKS` preserves the signed microtiming displacement from
+that step.
+
+During playback, the ADT or ADP regular grid is combined with the
+optional same-basename ORN sidecar.
 
 This separation has two purposes:
 
@@ -59,9 +82,12 @@ ORN  optional sidecar for events outside the regular grid
 ORN does not replace ADT or ADP. It supplements either representation
 during playback.
 
-ORN does not contain the main flam hit. The main hit remains in the
-regular grid. ORN stores only the grace event that decorates that target
-hit.
+For `FLAM`, ORN does not contain the main flam hit. The main hit remains
+in the regular grid; ORN stores only the grace event that decorates that
+target hit.
+
+For `NOTE`, the off-grid note itself is stored in ORN and shall not also
+be duplicated as a quantized hit in the matching ADT/ADP grid.
 
 ------------------------------------------------------------------------
 
@@ -165,22 +191,33 @@ The event section begins with:
 [EVENTS]
 ```
 
-ORN v1.0 defines the `FLAM` record:
+ORN v1.0 defines two event records: `FLAM` and `NOTE`.
 
 ``` text
 FLAM TARGET_STEP=<n> SLOT=<name> OFFSET_TICKS=<signed> VELOCITY=<1..127> [LOOP_WRAP=1]
+NOTE TARGET_STEP=<n> SLOT=<name> OFFSET_TICKS=<signed> VELOCITY=<1..127> [LOOP_WRAP=1]
 ```
 
-A trailing comment may follow:
+A trailing comment may follow either record:
 
 ``` text
 ; confidence=HIGH
+; confidence=EXACT
 ```
+
+`FLAM` represents a grace note associated with a main grid hit.
+
+`NOTE` represents an independent off-grid note. It uses the nearest or
+otherwise selected regular-grid step as its timing reference; the exact
+performed displacement is preserved in `OFFSET_TICKS`.
 
 ### 5.1 `TARGET_STEP`
 
-`TARGET_STEP` identifies the regular-grid step containing the main hit
-decorated by the grace note.
+`TARGET_STEP` identifies the regular-grid reference step for the event.
+
+For `FLAM`, it is the step containing the main hit decorated by the
+grace note. For `NOTE`, it is the reference step from which the note's
+signed microtiming displacement is measured.
 
 Valid range:
 
@@ -192,7 +229,7 @@ Steps are zero-based.
 
 ### 5.2 `SLOT`
 
-`SLOT` identifies the drum slot or instrument family of the flam.
+`SLOT` identifies the drum slot or instrument family of the event.
 
 The value shall correspond to the slot identity used by the matching
 pattern and player, such as:
@@ -201,20 +238,22 @@ pattern and player, such as:
 SN
 ```
 
-The current reference writer obtains this value from the shared flam
-analysis engine's instrument-family result.
+The reference writer obtains this value from the shared rhythm-analysis
+instrument-family result.
 
 ### 5.3 `OFFSET_TICKS`
 
-`OFFSET_TICKS` is the signed tick displacement of the grace note
-relative to the target grid step.
+`OFFSET_TICKS` is the signed tick displacement of the ORN event relative
+to the target grid step.
 
 ``` text
-grace_tick = target_step_tick + OFFSET_TICKS
+event_tick = target_step_tick + OFFSET_TICKS
 ```
 
-For an ordinary flam, the grace note normally precedes the main hit, so
-the value is negative.
+For an ordinary `FLAM`, the grace note normally precedes the main hit,
+so the value is usually negative. For `NOTE`, either a negative or
+positive value is valid and indicates that the performed note occurs
+before or after the reference grid step.
 
 Example:
 
@@ -222,11 +261,11 @@ Example:
 TARGET_STEP=5 OFFSET_TICKS=-30
 ```
 
-means that the grace note occurs 30 canonical ticks before step 5.
+means that the ORN event occurs 30 canonical ticks before step 5.
 
 ### 5.4 `VELOCITY`
 
-`VELOCITY` is the original MIDI velocity of the grace note.
+`VELOCITY` is the original MIDI velocity of the ORN event.
 
 Valid range:
 
@@ -234,14 +273,15 @@ Valid range:
 1..127
 ```
 
-Unlike ADT/ADP accent levels, ORN preserves the grace note's continuous
-MIDI velocity.
+Unlike ADT/ADP accent levels, ORN preserves the event's continuous MIDI
+velocity.
 
 ### 5.5 `LOOP_WRAP`
 
-`LOOP_WRAP=1` marks an ornament whose grace note lies near the end of
-the pattern but decorates the target hit at the beginning of the next
-loop iteration.
+`LOOP_WRAP=1` marks an ORN event whose actual playback position crosses
+the loop boundary relative to its target step. This is most commonly
+used for a flam grace note near the end of the pattern that decorates a
+target hit at the beginning of the next loop iteration.
 
 For a loop-boundary flam:
 
@@ -340,6 +380,36 @@ independent final-step hit.
 
 ------------------------------------------------------------------------
 
+## 7.1 Example: off-grid `NOTE` events
+
+The following form is used by existing ORN v1.0 corpus files to preserve
+notes that do not lie exactly on the selected regular grid:
+
+``` text
+; ORN v1.0
+; NAME=RAP_0169
+; SOURCE=5RAP_05W.MID:85-86
+UNIT=TICK
+SUBDIV=16
+LENGTH=32
+LOOP_TICKS=1920
+
+[EVENTS]
+NOTE TARGET_STEP=13 SLOT=LT OFFSET_TICKS=-20 VELOCITY=64 ; confidence=EXACT
+NOTE TARGET_STEP=13 SLOT=SN OFFSET_TICKS=20 VELOCITY=64 ; confidence=EXACT
+NOTE TARGET_STEP=29 SLOT=LT OFFSET_TICKS=-20 VELOCITY=64 ; confidence=EXACT
+NOTE TARGET_STEP=29 SLOT=SN OFFSET_TICKS=20 VELOCITY=64 ; confidence=EXACT
+```
+
+Here, `TARGET_STEP=13` is the timing reference. The LT note occurs 20
+canonical ticks before that grid position, while the SN note occurs 20
+ticks after it. The corresponding events at step 29 repeat the same
+microtiming relationship in the second bar.
+
+`confidence=EXACT` is diagnostic trailing metadata and is non-normative.
+
+------------------------------------------------------------------------
+
 ## 8. Generation Policy
 
 The reference ORN writer uses:
@@ -360,10 +430,19 @@ ORN=YES
 The selected `START_BAR..END_BAR` range identifies the pattern in the
 original MIDI file.
 
-Flam candidates are detected by the shared `adc_rhythm_analysis.py`
-engine. Only candidates marked for removal from subdivision analysis are
-emitted as ORN events. This includes supported high- or
-medium-confidence flam candidates and loop-boundary flam grace notes.
+ORN events may originate from two supported cases.
+
+-   `FLAM`: flam candidates detected by the shared
+    `adc_rhythm_analysis.py` engine and marked for removal from
+    subdivision analysis. This includes supported high- or
+    medium-confidence flam candidates and loop-boundary flam grace
+    notes.
+-   `NOTE`: independent notes whose performed timing lies off the
+    selected regular grid and whose exact microtiming is preserved as a
+    signed `OFFSET_TICKS` from a reference `TARGET_STEP`.
+
+Both event types preserve timing in canonical PPQN 240 coordinates and
+shall not be duplicated as quantized hits in the matching ADT/ADP grid.
 
 Flam analysis is **subdivision-aware**. A finer grid is not retained
 merely because an ornamental grace note occupies a finer timing
@@ -401,10 +480,11 @@ A conforming ORN v1.0 writer shall:
 -   use the canonical PPQN 240 coordinate system;
 -   write `[EVENTS]` before event records;
 -   keep target steps within `0..LENGTH-1`;
--   preserve grace-note velocity in `1..127`;
+-   emit only registered v1.0 event types: `FLAM` or `NOTE`;
+-   preserve event velocity in `1..127`;
 -   use a signed tick offset relative to the target step;
 -   mark cross-loop events with `LOOP_WRAP=1`; and
--   exclude the same grace event from the matching ADT/ADP regular grid.
+-   exclude the same ORN event from the matching ADT/ADP regular grid.
 
 A conforming reader shall:
 
@@ -421,12 +501,16 @@ A conforming reader shall:
 
 ## 10. Scope of ORN v1.0
 
-ORN v1.0 formally defines flam grace events only.
+ORN v1.0 formally defines two event types:
+
+-   `FLAM` --- a grace note decorating a main hit on the regular grid;
+-   `NOTE` --- an independent off-grid note whose exact microtiming is
+    stored relative to a regular-grid reference step.
 
 The sidecar design allows future versions to add other performance
-details, but unregistered event types are outside this specification.
+details, but unregistered event types remain outside this specification.
 Potential future extensions may include additional grace structures,
-drags, ruffs, or other microtiming annotations.
+drags, ruffs, or other performance annotations.
 
 Such extensions shall not change the central division of responsibility:
 
