@@ -1,6 +1,6 @@
 ADX Rhythm Cluster Report v0.2
 schema	ADX_SIMILARITY_FAMILY_STRENGTH_V2
-alpha	0.0000
+alpha	0.1000
 similarity	combined strength-aware
 threshold	0.9000
 method	complete linkage
@@ -8,8 +8,8 @@ representative	medoid
 patterns	1796
 comparison_strata	6
 pairwise_comparisons	729607
-clusters_total	1355
-multi_member_clusters	303
-singletons	1052
-patterns_in_multi_member_clusters	744
+clusters_total	1306
+multi_member_clusters	336
+singletons	970
+patterns_in_multi_member_clusters	826
 largest_cluster	10
