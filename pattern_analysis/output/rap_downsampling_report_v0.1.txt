@@ -1,0 +1,12 @@
+ADX RAP Downsampling Experiment v0.1
+all_medoids	1306
+original_rap_medoids	751
+nonrap_medoids	555
+alpha	0.10
+family_threshold	0.80
+repeats_per_size	100
+seed	20260905
+
+RAP=100	pool_rap_fraction=0.1527±0.0000	RR_enrichment=2.4185±0.6152	RAP_neighbor_homophily=0.7475±0.0935	homophily_lift=4.8964±0.6121	pure_RAP_families=11.25±2.53	mixed_families=5.50±1.87
+RAP=200	pool_rap_fraction=0.2649±0.0000	RR_enrichment=2.3388±0.2742	RAP_neighbor_homophily=0.8605±0.0436	homophily_lift=3.2484±0.1647	pure_RAP_families=34.31±3.60	mixed_families=8.43±2.38
+RAP=300	pool_rap_fraction=0.3509±0.0000	RR_enrichment=2.2163±0.1397	RAP_neighbor_homophily=0.9059±0.0232	homophily_lift=2.5818±0.0662	pure_RAP_families=63.57±3.88	mixed_families=10.43±2.42
