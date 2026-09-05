@@ -1,0 +1,33 @@
+ADX Phase 3 search projection report
+========================================================================
+Generated: 2026-09-04T09:11:18
+Canonical input: E:\Hobbies\Ardule\indexing\output\canonical_patterns.jsonl
+Slot-map definitions: E:\Hobbies\Ardule\indexing\slot_map_definitions.json
+Output: E:\Hobbies\Ardule\indexing\output
+Fine schema: ADX_SEARCH_FINE_V1
+Family schema: ADX_SEARCH_FAMILY_V1
+
+[SUMMARY]
+native canonical patterns     1796
+projection records            1796
+fine unique groups            1796
+fine equivalent groups        0
+fine additional merges        0
+family unique groups          1715
+family equivalent groups      64
+family additional merges      81
+
+[SLOT_MAP_RESOLUTION]
+legacy_fallback	1531
+slot_map_token	265
+
+[FINE_MULTIPLICITY]
+1	1796
+
+[FAMILY_MULTIPLICITY]
+1	1651
+2	55
+3	4
+4	3
+5	1
+6	1

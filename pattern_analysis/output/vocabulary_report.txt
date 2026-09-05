@@ -1,0 +1,44 @@
+ADX Phase 2 native vocabulary report
+========================================================================
+Generated: 2026-09-04T08:54:40
+Input: E:\Hobbies\Ardule\indexing\output\normalized_1bar.jsonl
+Output: E:\Hobbies\Ardule\indexing\output
+Hash schema: ADX_NATIVE_V1
+
+[SUMMARY]
+normalized 1-bar records     2010
+canonical native patterns   1796
+records collapsed by dedup   214
+duplicate pattern groups    168
+records in duplicate groups 382
+expanded source occurrences 3176
+source transitions          1588
+cross-corpus exact groups   9
+reused existing IDX IDs     0
+
+[CANONICAL_METER]
+4/4	1733
+3/4	40
+6/8	23
+
+[CANONICAL_RESOLUTION]
+16	1221
+32	229
+16T	226
+8T	120
+
+[CANONICAL_SLOT_MAP]
+UNSPECIFIED:W12	1531
+ID:RAP	209
+ID:ADD2	21
+ID:ADD1	15
+ID:ADD3	12
+ID:ADD4	6
+ID:ADD5	2
+
+[EXACT_MULTIPLICITY]
+1	1628
+2	132
+3	29
+4	6
+7	1

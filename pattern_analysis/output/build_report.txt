@@ -1,0 +1,59 @@
+ADX Phase 1 build report
+========================================================================
+Generated: 2026-09-04T08:46:26
+Script dir: E:\Hobbies\Ardule\indexing
+Ardule root: E:\Hobbies\Ardule
+Collections: E:\Hobbies\Ardule\collections
+Output: E:\Hobbies\Ardule\indexing\output
+
+[SUMMARY]
+corpora                  4
+ADT files                1588
+ORN files                41
+paired ORN               41
+valid sources            1588
+invalid sources          0
+normalized 1-bar records 2010
+AA sources               1166
+AB sources               422
+single-bar sources       0
+warnings                 0
+errors                   0
+
+[CORPORA]
+instant-200	ADT	ADT=182	ORN=0
+instant-260	ADT+ORN	ADT=261	ORN=38
+instant-rap	ADT+ORN	ADT=875	ORN=3
+mididrumfiles-80	ADT	ADT=270	ORN=0
+
+[METER]
+4/4	1534
+3/4	32
+6/8	22
+
+[RESOLUTION]
+16	1080
+32	196
+16T	195
+8T	117
+
+[SLOT_MAP]
+RAP	130
+ADD2	16
+ADD1	8
+ADD3	7
+ADD4	4
+ADD5	2
+
+[ORN_EVENT_TYPES]
+FLAM	176
+NOTE	14
+
+[INVALID_REASONS]
+(none)
+
+[WARNINGS]
+(none)
+
+[ERRORS]
+(none)

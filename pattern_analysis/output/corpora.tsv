@@ -1,0 +1,5 @@
+corpus_id	source_root	source_layout	adt_count	orn_count	notes
+instant-200	collections/instant-200	ADT	182	0	
+instant-260	collections/instant-260	ADT+ORN	261	38	
+instant-rap	collections/instant-rap	ADT+ORN	875	3	
+mididrumfiles-80	collections/mididrumfiles-80	ADT	270	0	

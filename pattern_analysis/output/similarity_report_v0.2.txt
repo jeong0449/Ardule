@@ -1,0 +1,67 @@
+ADX Phase 4 v0.2 strength-aware similarity report
+========================================================================
+Generated: 2026-09-05T09:15:18
+Input: C:\projects\Ardule\indexing\output\search_projection.jsonl
+Output: C:\projects\Ardule\indexing\output
+Schema: ADX_SIMILARITY_FAMILY_STRENGTH_V2
+
+[DEFINITION]
+family_weights	KK=3.0 SN=3.0 HH=1.0 TOM=1.5 CYM=1.2 PERC=1.0
+exact_grid_match	1.00
+adjacent_grid_match	0.35
+adjacency	cyclic +/-1 step
+rhythm_articulation	ignored; every non-dot is one hit
+strength_metric	exact co-located family hits only; mean rank similarity
+alpha	0.100000
+combined_metric	(1-alpha)*rhythm + alpha*strength; fallback to rhythm if no strength evidence
+ranking	combined desc, rhythm desc, strength desc, IDX asc
+comparison_scope	same meter + same resolution + same step count
+rhythm_normalization	weighted fuzzy Dice
+
+[SUMMARY]
+patterns                     1796
+comparison strata            6
+pairwise comparisons          729607
+pairs with combined > 0      629789
+pairs with rhythm = 1        248
+pairs with combined = 1      110
+pairs without strength data  127943
+min similarity stored        0.000
+candidate pairs stored        729607
+top K per pattern             20
+patterns with >=1 neighbor    1796
+neighbor rows written         35920
+
+[STRATA]
+3/4	16	steps=12	patterns=40
+4/4	16	steps=16	patterns=1158
+4/4	16T	steps=24	patterns=226
+4/4	32	steps=32	patterns=229
+4/4	8T	steps=12	patterns=120
+6/8	16	steps=12	patterns=23
+
+[COMBINED_SIMILARITY_HISTOGRAM_ALL_PAIRS]
+0.0-0.1	122352
+0.1-0.2	34197
+0.2-0.3	106895
+0.3-0.4	129929
+0.4-0.5	131265
+0.5-0.6	106948
+0.6-0.7	62769
+0.7-0.8	26531
+0.8-0.9	7314
+0.9-1.0	1297
+1.0	110
+
+[RHYTHM_SIMILARITY_HISTOGRAM_ALL_PAIRS]
+0.0-0.1	132427
+0.1-0.2	84945
+0.2-0.3	115818
+0.3-0.4	122406
+0.4-0.5	113524
+0.5-0.6	86305
+0.6-0.7	47759
+0.7-0.8	19153
+0.8-0.9	5957
+0.9-1.0	1065
+1.0	248
