@@ -65,32 +65,33 @@ The actual specification revision is carried independently in the
 **Version** field. This separation allows future revisions of the ADP3
 binary format while retaining the same file-family identifier.
 
-  -------------------------------------------------------------------------
-                Offset                 Size Field           Description
-  -------------------- -------------------- --------------- ---------------
-                `0x00`                    4 Magic           ASCII `ADP3`
+  ---------------------------------------------------------------------
+               Offset                Size Field          Description
+  ------------------- ------------------- -------------- --------------
+               `0x00`                   4 Magic          ASCII `ADP3`
 
-                `0x04`                    1 Version         Decimal `23`
+               `0x04`                   1 Version        Decimal `23`
 
-                `0x05`                    1 SUBDIV code     `0` = `16`, `1`
-                                                            = `32`, `2` =
-                                                            `8T`, `3` =
-                                                            `16T`
+               `0x05`                   1 SUBDIV code    `0` = `16`,
+                                                         `1` = `32`,
+                                                         `2` = `8T`,
+                                                         `3` = `16T`
 
-                `0x06`                    1 LENGTH          Number of steps
+               `0x06`                   1 LENGTH         Number of
+                                                         steps
 
-                `0x07`                    1 SLOT_MAP_ID     Registered
-                                                            numeric ID, or
-                                                            `255` for
-                                                            `INLINE`
+               `0x07`                   1 SLOT_MAP_ID    Registered
+                                                         numeric ID, or
+                                                         `255` for
+                                                         `INLINE`
 
-                `0x08`                    2 Payload Bytes   Payload length
-                                                            in bytes
+               `0x08`                   2 Payload Bytes  Payload length
+                                                         in bytes
 
-                `0x0A`                    2 Payload CRC16   CRC16-CCITT of
-                                                            the payload
-                                                            only
-  -------------------------------------------------------------------------
+               `0x0A`                   2 Payload CRC16  CRC16-CCITT of
+                                                         the payload
+                                                         only
+  ---------------------------------------------------------------------
 
 The header corresponds to the following little-endian structure:
 
@@ -236,8 +237,8 @@ one or more `SLOTn` definitions.
 For example:
 
 ``` text
-SLOT_MAP=LEGACY
-SLOT11=P54,54,54
+SLOT_MAP_ID=LEGACY
+SLOT11=P54@54,TAMBOURINE
 ```
 
 uses the registered `LEGACY` map as its base while replacing only slot
