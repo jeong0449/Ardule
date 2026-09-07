@@ -24,7 +24,7 @@ from adc_rhythm_analysis import (
     SUPPORTED_RESOLUTIONS, analyze_event_rhythm, detect_flams,
 )
 
-SCRIPT_NAME="adc-patternlab.py"; VERSION="260907b"; VERSION_TEXT=f"{SCRIPT_NAME} {VERSION}"
+SCRIPT_NAME="adc-patternlab.py"; VERSION="260907c"; VERSION_TEXT=f"{SCRIPT_NAME} {VERSION}"
 VERY_WEAK_HIT_MAX_VELOCITY=30
 if tuple(SUPPORTED_RESOLUTIONS) != ("16", "32", "8T", "16T"):
     raise RuntimeError(
@@ -2529,6 +2529,7 @@ function bindAnalysisInteractionControls(root=document){{
   bindPatternReferences(root);bindTransitionNodeDragging(root);bindTransitionGraphFilters(root);bindTransitionExports(root);bindSequencePlayButtons(root);
 }}
 bindAnalysisInteractionControls(document.getElementById('pattern-analysis')||document);
+bindAnalysisInteractionControls(document.getElementById('pattern-hierarchy')||document);
 function csvCell(value){{const x=String(value??'');return /[",\\n]/.test(x)?'"'+x.replace(/"/g,'""')+'"':x}}
 function writeU16(a,v){{a.push((v>>8)&255,v&255)}}
 function writeU32(a,v){{a.push((v>>>24)&255,(v>>>16)&255,(v>>>8)&255,v&255)}}
