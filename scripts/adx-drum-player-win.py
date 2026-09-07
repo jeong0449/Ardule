@@ -8,7 +8,8 @@ Supports:
 - Legacy ADP v2.2 caches (ADP2)
 - Optional same-basename ORN sidecars
 - Registered slot maps from slot_map_definitions.json
-- ADP3 SLOT_MAP_ID=255 (INLINE) via a same-basename companion ADT
+- ADP3 SLOT_MAP_ID=255 via a same-basename companion ADT
+- ADT v2.3 registered base maps with local SLOTn overrides
 
 ADT/ADP/ORN are rendered to a temporary Standard MIDI File and played through FluidSynth.
 Standard MIDI Files are passed directly to FluidSynth unless --bpm is used; then tempo metadata is overridden in a temporary MIDI copy.
@@ -34,7 +35,7 @@ except ImportError:
     mido = None
 
 SCRIPT_NAME = "adx-drum-player-win.py"
-VERSION = "260807a"
+VERSION = "260907a"
 VERSION_TEXT = f"{SCRIPT_NAME} {VERSION}"
 
 ADT_VERSION_LINE = "; ADT v2.3"
@@ -294,11 +295,23 @@ def parse_adt_v23(path: Path, slot_maps_by_name: Dict[str, SlotMapDefinition], s
             raise ValueError("INLINE slot indices must be contiguous from SLOT0")
         slots = tuple(parse_inline_slot(inline_raw[i], i) for i in indices)
     else:
-        if inline_raw:
-            raise ValueError("SLOT definitions are only valid with SLOT_MAP_ID=INLINE")
         if slot_map_name not in slot_maps_by_name:
             raise ValueError(f"Unknown SLOT_MAP_ID: {slot_map_name}")
-        slots = slot_maps_by_name[slot_map_name].slots
+        base_slots = slot_maps_by_name[slot_map_name].slots
+        if inline_raw:
+            # ADT v2.3 extension: registered base map + per-file SLOTn overrides.
+            # Unspecified slots inherit the registered definition unchanged.
+            effective_slots = list(base_slots)
+            for index, value in sorted(inline_raw.items()):
+                if not 0 <= index < len(effective_slots):
+                    raise ValueError(
+                        f"SLOT{index} override outside registered map {slot_map_name} "
+                        f"(slots={len(effective_slots)})"
+                    )
+                effective_slots[index] = parse_inline_slot(value, index)
+            slots = tuple(effective_slots)
+        else:
+            slots = base_slots
 
     orientation = metadata.get("ORIENTATION", DEFAULT_ORIENTATION).upper()
     if orientation not in {"STEP", "SLOT"}:
@@ -429,14 +442,15 @@ def load_adp3(path: Path, data: bytes, by_name: Dict[str, SlotMapDefinition], by
         if companion is None:
             raise ValueError(f"ADP3 INLINE slot map requires companion {path.stem}.ADT beside the ADP")
         inline_pattern = parse_adt_v23(companion, by_name, symbol_to_level)
-        if inline_pattern.slot_map_name != "INLINE":
-            raise ValueError(f"Companion {companion.name} must declare SLOT_MAP_ID=INLINE")
+        # SLOT_MAP_ID=255 means the effective slot map is supplied by the
+        # companion ADT.  The ADT may use full INLINE definitions or a
+        # registered base map with local SLOTn overrides.
         if inline_pattern.length != length or inline_pattern.grid_type != SUBDIV_CODE_TO_STR[subdiv_code]:
             raise ValueError("Companion ADT LENGTH/SUBDIV does not match ADP3 header")
         slot_notes = inline_pattern.slot_notes
         slot_abbr = inline_pattern.slot_abbr
         slot_full_names = inline_pattern.slot_full_names
-        slot_map_name = "INLINE"
+        slot_map_name = inline_pattern.slot_map_name
     else:
         if slot_map_id not in by_id:
             raise ValueError(f"Unknown registered SLOT_MAP_ID: {slot_map_id}")
