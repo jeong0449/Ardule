@@ -13,11 +13,18 @@ from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Set, Tuple
 from mido import Message, MetaMessage, MidiFile
 
+SCRIPT_DIR=Path(__file__).resolve().parent
+for _lib_path in (SCRIPT_DIR/'..'/'lib', SCRIPT_DIR/'lib', SCRIPT_DIR):
+    if _lib_path.exists():
+        sys.path.insert(0,str(_lib_path.resolve()))
+
+from adx_similarity_core import FAMILY_ORDER, compare as adx_compare, group_key as adx_group_key
+
 from adc_rhythm_analysis import (
     SUPPORTED_RESOLUTIONS, analyze_event_rhythm, detect_flams,
 )
 
-SCRIPT_NAME="adc-patternlab.py"; VERSION="260903d"; VERSION_TEXT=f"{SCRIPT_NAME} {VERSION}"
+SCRIPT_NAME="adc-patternlab.py"; VERSION="260907b"; VERSION_TEXT=f"{SCRIPT_NAME} {VERSION}"
 VERY_WEAK_HIT_MAX_VELOCITY=30
 if tuple(SUPPORTED_RESOLUTIONS) != ("16", "32", "8T", "16T"):
     raise RuntimeError(
@@ -86,6 +93,12 @@ class Slot: label:str; notes:Tuple[int,...]; representative:int
 @dataclass(frozen=True)
 class SMap:
     id:int; name:str; slots:Tuple[Slot,...]
+    base_name:Optional[str]=None
+    overrides:Tuple[Tuple[int,Slot],...]=()
+    @property
+    def display_name(self)->str:
+        base=self.base_name or self.name
+        return f"{base}+{len(self.overrides)}" if self.overrides else base
     @property
     def accepted(self)->Set[int]:
         s=set()
@@ -264,29 +277,49 @@ def make_bars(tpq,ts,mx):
     return out
 
 def choose(notes):
-    """Choose the lowest-ID exact SLOT_MAP, or the nearest map with warning.
-
-    If no map is a complete cover, every map participates in the comparison.
-    The map covering the most distinct notes wins; ties prefer fewer unused
-    accepted notes and finally the stable lower ID, so LEGACY (ID 0) remains
-    the conservative default.
-    """
+    """Choose a registered SLOT_MAP for a note set (legacy helper)."""
     if not notes:
         return MAPS[0], []
-
     exact=[m for m in MAPS if notes <= m.accepted]
     if exact:
         m=min(exact,key=lambda z:z.id)
         return m, []
-
     def score(m):
         covered=len(notes & m.accepted)
         missing=len(notes - m.accepted)
         unused=len(m.accepted - notes)
         return (covered,-missing,-m.id,-unused)
-
     m=max(MAPS,key=score)
     return m,sorted(notes-m.accepted)
+
+def choose_song_map(notes):
+    """Infer one song-level map from the complete CH10 note inventory.
+
+    A registered map is used as the base. Missing raw notes replace slots unused
+    anywhere in the song. The base requiring the fewest replacements wins; ties
+    prefer the lower registered ID. All bars then share one coordinate system.
+    """
+    notes=set(int(n) for n in notes)
+    if not notes:
+        base=MAPS[0]
+        return SMap(base.id,base.name,base.slots,base_name=base.name), []
+    candidates=[]
+    for base in MAPS:
+        missing=sorted(notes-base.accepted)
+        unused_slots=[i for i,slot in enumerate(base.slots) if not (set(slot.notes) & notes)]
+        feasible=len(missing)<=len(unused_slots)
+        accommodated=min(len(missing),len(unused_slots))
+        score=(1 if feasible else 0,-len(missing),accommodated,-base.id)
+        candidates.append((score,base,missing,unused_slots))
+    _score,base,missing,unused_slots=max(candidates,key=lambda row:row[0])
+    target_slots=sorted(unused_slots,reverse=True)[:len(missing)]
+    slots=list(base.slots); overrides=[]
+    for slot_no,note in zip(target_slots,missing):
+        slot=Slot(f"P{note}",(note,),note)
+        slots[slot_no]=slot
+        overrides.append((slot_no,slot))
+    smap=SMap(base.id,base.name,tuple(slots),base_name=base.name,overrides=tuple(sorted(overrides)))
+    return smap,sorted(notes-smap.accepted)
 
 def _is_ending_hit_block(block_bars, events):
     if len(block_bars)!=1 or not events:
@@ -378,12 +411,14 @@ def skip_leading_empty_bars(bars, events):
     return bars[first_nonempty:],first_nonempty
 
 
-def blocks(bars,ev,tpq,filename):
-    """Segment the source into one-bar pattern candidates."""
+def blocks(bars,ev,tpq,filename,song_map=None):
+    """Segment the source into one-bar pattern candidates using one song-level map."""
     out=[]
+    if song_map is None:
+        song_map,_song_unknown=choose_song_map({x.note for x in ev})
     for bar in bars:
         bb=[bar]; s,e=bar.start,bar.end
-        ee=[x for x in ev if s<=x.tick<e]; m,u=choose({x.note for x in ee})
+        ee=[x for x in ev if s<=x.tick<e]; m=song_map; u=sorted({x.note for x in ee}-m.accepted)
         rhythm=analyze_event_rhythm(ee,tpq,filename,loop_ticks=e-s,loop_start=s)
         sub=rhythm["subdivision"]; sub["tpq"]=tpq
         out.append(Block(len(out)+1,bb,s,e,ee,m,u,sub))
@@ -485,7 +520,7 @@ def reference_card(b,x,y,w=430,h=470,path=None):
     bars=str(b.bars[0].no) if len(b.bars)==1 else f'{b.bars[0].no}–{b.bars[-1].no}'
     p=[f'<g class="block duplicate {"bad" if b.unknown else ""}" data-block="{b.no}"><rect x="{x}" y="{y}" width="{w}" height="{h}" rx="8" class="bg"/>']
     heading=(f'Same as B{b.duplicate_of:03d}' if b.duplicate_csv.endswith('RAW identical') else f'Abstract duplicate of B{b.duplicate_of:03d}')
-    p += [tx(x+16,y+28,f'B{b.no:03d}  bars {bars}',"title"),tx(x+w/2,y+105,f'P{b.pattern_no:03d}',"dup-pattern","middle"),tx(x+w/2,y+139,heading,"dup-same","middle"),tx(x+w/2,y+164,b.duplicate_card,"meta","middle"),tx(x+w/2,y+188,f'ID {b.smap.id} {b.smap.name} · matrix omitted',"meta","middle"),tx(x+w/2,y+211,('MISSING NOTES: '+','.join(map(str,b.unknown))) if b.unknown else '',"warning","middle"),tx(x+16,y+248,'duplicate checked within this MIDI file only',"meta"),card_controls(path,b,x,y+264,w),'</g>']
+    p += [tx(x+16,y+28,f'B{b.no:03d}  bars {bars}',"title"),tx(x+w/2,y+105,f'P{b.pattern_no:03d}',"dup-pattern","middle"),tx(x+w/2,y+139,heading,"dup-same","middle"),tx(x+w/2,y+164,b.duplicate_card,"meta","middle"),tx(x+w/2,y+188,f'SONG MAP · {b.smap.display_name} · matrix omitted',"meta","middle"),tx(x+w/2,y+211,('MISSING NOTES: '+','.join(map(str,b.unknown))) if b.unknown else '',"warning","middle"),tx(x+16,y+248,'duplicate checked within this MIDI file only',"meta"),card_controls(path,b,x,y+264,w),'</g>']
     return ''.join(p)
 
 def ending_card(b,x,y,w=430,h=470,path=None):
@@ -565,7 +600,7 @@ def card(b,x,y,w=430,h=470,path=None):
     p += [
         tx(x+10,y+18,(f'bar {bars} · EMPTY' if is_empty else f'P{b.pattern_no:03d} · bar {bars}' + (f' ×{getattr(b,"occurrence_count",1)}' if getattr(b,"occurrence_count",1)>1 else '')),"title"),
         f'<text x="{x+10:.1f}" y="{y+36:.1f}" class="meta grid-summary" data-prefix="{html.escape(meter)} · {len(b.events)} hits · ">{html.escape(meter)} · {len(b.events)} hits · {initial_cells} cells/beat</text>',
-        tx(x+w-10,y+18,f'ID {b.smap.id} {b.smap.name}',"sid","end"),
+        tx(x+w-10,y+18,f'SONG MAP · {b.smap.display_name}',"sid","end"),
         tx(x+w-10,y+36,f'{ {"triplet-8T":"triplet-8","triplet-16T":"triplet-16"}.get(b.subdiv["subdivision"],b.subdiv["subdivision"]) } · {b.subdiv["confidence"]}',"meta","end")]
     warning_parts=[]
     if is_empty:
@@ -1016,6 +1051,12 @@ def _playback_block_data(mid: MidiFile, bb) -> dict:
             ],
             "slot_map_id":b.smap.id,
             "slot_map_name":b.smap.name,
+            "slot_map_base_name":b.smap.base_name or b.smap.name,
+            "slot_map_display_name":b.smap.display_name,
+            "slot_map_overrides":[
+                {"slot":slot_no,"label":slot.label,"note":slot.representative,"name":GM.get(slot.representative,f"MIDI_{slot.representative}").upper().replace(" ","_")}
+                for slot_no,slot in b.smap.overrides
+            ],
             "slots":[
                 {"label":slot.label,"notes":list(slot.notes),"representative":slot.representative}
                 for slot in b.smap.slots
@@ -1075,7 +1116,8 @@ def _corrected_preview_payload(path: Path, mid: MidiFile, resolution: str, toler
     bars_=make_bars(corrected_mid.ticks_per_beat,ts,mx)
     if skipped_leading_bars:
         bars_,_skipped=skip_leading_empty_bars(bars_,events)
-    bb=blocks(bars_,events,corrected_mid.ticks_per_beat,path.name)
+    song_map,_song_unknown=choose_song_map({e.note for e in events})
+    bb=blocks(bars_,events,corrected_mid.ticks_per_beat,path.name,song_map=song_map)
     # Important: corrected preview is a complete second PatternLab analysis, not
     # a graphical shift of existing circles. Duplicate identity is recalculated
     # from corrected timing; the gallery then shows only representative patterns.
@@ -1083,6 +1125,7 @@ def _corrected_preview_payload(path: Path, mid: MidiFile, resolution: str, toler
     return {"body":body,"width":sw,"height":sh,
             "block_data":_playback_block_data(corrected_mid,bb),
             "analysis_html":_pattern_analysis_html(bb),
+            "hierarchy_html":_pattern_hierarchy_html(bb),
             "song_timeline":_song_timeline_payload(corrected_mid,bb),
             "unique_patterns":sum(1 for b in bb if b.events and not b.ending_hit and b.duplicate_of is None),
             "duplicates":sum(1 for b in bb if b.duplicate_of is not None),
@@ -1560,6 +1603,129 @@ def _transition_graph_html(counts, transitions, first_block):
     )
 
 
+# --- ADX Pattern Hierarchy Analysis ---------------------------------------
+# Same frozen v0.2 similarity core and complete-linkage thresholds used by
+# adx_pattern_hierarchy_v0.4a.py.  PatternLab builds records directly from the
+# current one-bar Block objects; no CSV round-trip is required.
+_ADX_STRENGTH=lambda v: '-' if v<=30 else 'x' if v<=55 else 'o' if v<=80 else '^' if v<=105 else '@'
+_ADX_RANK={'.':0,'-':1,'x':2,'o':3,'^':4,'@':5}
+_ADX_NOTE_FAMILY={
+    35:'KK',36:'KK', 37:'SN',38:'SN',39:'SN',40:'SN',
+    42:'HH',44:'HH',46:'HH',
+    41:'TOM',43:'TOM',45:'TOM',47:'TOM',48:'TOM',50:'TOM',
+    49:'CYM',51:'CYM',52:'CYM',53:'CYM',55:'CYM',57:'CYM',59:'CYM',
+}
+for _n in range(54,82):
+    _ADX_NOTE_FAMILY.setdefault(_n,'PERC')
+
+
+def _adx_record_from_block(block):
+    resolution={
+        'straight-16':'16','straight-32':'32','triplet-8':'8T','triplet-8T':'8T',
+        'triplet-16':'16T','triplet-16T':'16T',
+    }.get(str(block.subdiv.get('subdivision','')),str(block.subdiv.get('resolution','16')))
+    if resolution not in {'16','32','8T','16T'}: resolution='16'
+    cells_per_beat={'16':4,'32':8,'8T':3,'16T':6}[resolution]
+    tpq=max(1,int(block.subdiv.get('tpq',1)))
+    step=tpq/cells_per_beat
+    nsteps=max(1,round((block.end-block.start)/step))
+    cells=[['.']*len(FAMILY_ORDER) for _ in range(nsteps)]
+    flam=detect_flams(block.events,tpq,loop_ticks=block.end-block.start,loop_start=block.start,
+                      selected_resolution=block.subdiv.get('provisional_resolution',block.subdiv.get('resolution')))
+    grace_ids={id(block.events[int(item['grace_index'])]) for item in flam.get('flams',[])
+               if item.get('remove_from_subdivision') and 'grace_index' in item}
+    omitted=0
+    for event in block.events:
+        if id(event) in grace_ids: omitted+=1; continue
+        fam=_ADX_NOTE_FAMILY.get(int(event.note))
+        if fam is None: omitted+=1; continue
+        pos=(event.tick-block.start)/step; k=round(pos)
+        if not math.isclose(pos,k,abs_tol=1e-9) or not 0<=k<nsteps:
+            omitted+=1; continue
+        j=FAMILY_ORDER.index(fam); sym=_ADX_STRENGTH(event.vel)
+        if _ADX_RANK[sym]>_ADX_RANK[cells[k][j]]: cells[k][j]=sym
+    meter=f'{block.bars[0].num}/{block.bars[0].den}'
+    return {'pattern_id':f'P{block.pattern_no:03d}','meter':meter,'resolution':resolution,
+            'family_labels':FAMILY_ORDER,'family_steps':[''.join(row) for row in cells],
+            'bar':block.bars[0].no,'block':block.no,'orn':bool(grace_ids),'omitted':omitted}
+
+
+def _adx_sim(a,b):
+    if adx_group_key(a)!=adx_group_key(b): return -1.0
+    return adx_compare(a,b)['combined_similarity']
+
+
+def _adx_complete_clusters(items,threshold):
+    clusters=[[i] for i in range(len(items))]
+    while True:
+        best=None
+        for a in range(len(clusters)):
+            for b in range(a+1,len(clusters)):
+                vals=[_adx_sim(items[i],items[j]) for i in clusters[a] for j in clusters[b]]
+                if vals and min(vals)>=threshold:
+                    score=min(vals); key=(score,-min(clusters[a]),-min(clusters[b]))
+                    if best is None or key>best[0]: best=(key,a,b)
+        if best is None: break
+        _,a,b=best; clusters[a]=sorted(clusters[a]+clusters[b]); del clusters[b]
+    return sorted(clusters,key=lambda c:min(c))
+
+
+def _adx_medoid(indices,items):
+    if len(indices)==1:return indices[0]
+    return min(indices,key=lambda i:(sum(1-_adx_sim(items[i],items[j]) for j in indices if j!=i),i))
+
+
+def _pattern_hierarchy_html(bb):
+    # PatternLab representatives are the default export candidates.  ADX exact
+    # dedup is performed again because its family projection is coarser than SLOT.
+    source=[b for b in bb if b.events and not b.ending_hit and b.pattern_no>0 and b.duplicate_of is None]
+    records=[]; keys={}; occurrences=[]
+    bar_occ={}
+    for b in bb:
+        if b.events and not b.ending_hit and b.pattern_no>0:
+            bar_occ.setdefault(int(b.pattern_no),[]).append(int(b.bars[0].no))
+    for b in source:
+        r=_adx_record_from_block(b); key=(r['meter'],r['resolution'],tuple(r['family_steps']))
+        if key in keys:
+            occurrences[keys[key]].extend(bar_occ.get(int(b.pattern_no),[r['bar']]))
+        else:
+            keys[key]=len(records); records.append(r); occurrences.append(list(bar_occ.get(int(b.pattern_no),[r['bar']])))
+    if not records:
+        return '<section class="pattern-hierarchy" id="pattern-hierarchy"><div class="analysis-panel"><h2>Pattern Hierarchy Analysis</h2><p class="analysis-muted">No catalogable pattern.</p></div></section>'
+    trcs=_adx_complete_clusters(records,.90); trc_m=[_adx_medoid(c,records) for c in trcs]
+    medrecs=[records[i] for i in trc_m]; cpf_local=_adx_complete_clusters(medrecs,.80)
+    cpfs=[[trcs[i] for i in c] for c in cpf_local]
+    # CPF representative is deliberately chosen among TRC medoids, matching the
+    # hierarchy construction unit rather than all canonical members.
+    cpf_m=[]
+    for local in cpf_local:
+        candidates=[trc_m[i] for i in local]
+        cpf_m.append(_adx_medoid(candidates,records))
+    trc_of={i:k for k,c in enumerate(trcs,1) for i in c}
+    cpf_of={i:k for k,f in enumerate(cpfs,1) for c in f for i in c}
+    rows=[]
+    for fi,fam in enumerate(cpfs,1):
+        members=sorted({x for c in fam for x in c}); cm=cpf_m[fi-1]
+        trc_parts=[]; member_parts=[]
+        for tid in sorted({trc_of[x] for c in fam for x in c}):
+            tm=trc_m[tid-1]; tr=records[tm]
+            trc_parts.append(f'<span class="hier-trc">TRC_{tid:03d} <a class="analysis-pattern-link pattern-reference" href="#" data-jump-block="{tr["block"]}">{tr["pattern_id"]}</a></span>')
+            pats=[]
+            for x in trcs[tid-1]:
+                r=records[x]; mark=' <sup>M</sup>' if x==tm else ''
+                pats.append(f'<a class="analysis-pattern-link pattern-reference" href="#" data-jump-block="{r["block"]}">{r["pattern_id"]}</a>{mark}')
+            member_parts.append(f'<div class="hier-members"><b>TRC_{tid:03d}</b><span>{" ".join(pats)}</span></div>')
+        cr=records[cm]
+        rows.append(f'<tr><td>CPF_{fi:03d}</td><td><a class="analysis-pattern-link pattern-reference" href="#" data-jump-block="{cr["block"]}">{cr["pattern_id"]}</a></td><td>{" ".join(trc_parts)}</td><td class="anum">{len(fam)}</td><td class="anum">{len(members)}</td><td>{"".join(member_parts)}</td></tr>')
+    return ('<section class="pattern-hierarchy" id="pattern-hierarchy">'
+            '<div class="analysis-panel"><h2>Pattern Hierarchy Analysis</h2>'
+            f'<p class="analysis-note">{len(source)} PatternLab representative(s) → {len(records)} exact ADX unique → '
+            f'{len(trcs)} Tight Rhythm Cluster(s) (S ≥ 0.90) → {len(cpfs)} Candidate Pattern Family/Families (S ≥ 0.80). '
+            'Shared ADX similarity v0.2 · complete linkage. Exact on-grid hits enter the hierarchy; flam grace/off-grid hits are omitted.</p>'
+            '<div class="analysis-scroll"><table class="analysis-table hierarchy-table"><thead><tr><th>CPF</th><th>CPF medoid</th><th>TRC medoids</th><th class="anum">TRCs</th><th class="anum">Patterns</th><th>TRC → members</th></tr></thead><tbody>'+
+            ''.join(rows)+'</tbody></table></div></div></section>')
+
+
 def _pattern_analysis_html(bb):
     """One-bar distribution, condensed sequence, transitions, and variations."""
     eligible=[b for b in bb if b.events and not b.ending_hit and b.pattern_no>0]
@@ -1681,9 +1847,10 @@ def _pattern_analysis_html(bb):
 def render(path,mid,bars_,bb,skipped_leading_bars=0):
     body_html,sw,sh=_render_card_body(path,bb)
     analysis_html=_pattern_analysis_html(bb)
+    hierarchy_html=_pattern_hierarchy_html(bb)
     notes=sorted({e.note for b in bb for e in b.events}); summary={}
     for b in bb:
-        if not b.ending_hit and b.duplicate_of is None:summary[f'{b.smap.id} {b.smap.name}']=summary.get(f'{b.smap.id} {b.smap.name}',0)+1
+        if not b.ending_hit and b.duplicate_of is None:summary[f'SONG MAP {b.smap.display_name}']=summary.get(f'SONG MAP {b.smap.display_name}',0)+1
     unique_count=sum(1 for b in bb if b.events and not b.ending_hit and b.duplicate_of is None); duplicate_count=sum(1 for b in bb if b.duplicate_of is not None); ending_count=sum(1 for b in bb if b.ending_hit); empty_count=sum(1 for b in bb if not b.events)
     header_parts=[f"SMF Type {mid.type}",f"TPQ {mid.ticks_per_beat}"]
     if skipped_leading_bars:
@@ -1722,7 +1889,7 @@ def render(path,mid,bars_,bb,skipped_leading_bars=0):
 
 .header-top{{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}}.brand h1{{margin:0;font-size:19px;line-height:1.1}}.brand-sub{{margin-top:2px;color:var(--muted);font-size:10.5px}}.header-state{{display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end}}.mode-badge{{padding:3px 8px;border-radius:999px;background:var(--bg);border:1px solid var(--line);font-size:10.5px;font-weight:800}}.summary{{margin-top:5px;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}.header-actions{{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:6px;padding-top:6px;border-top:1px solid var(--line)}}.tool-groups{{display:flex;align-items:center;gap:12px;flex-wrap:wrap}}.tool-group{{display:flex;align-items:center;gap:5px}}.tool-group+.tool-group{{padding-left:12px;border-left:1px solid var(--line)}}.tool-label{{color:var(--muted);font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.04em}}.header-actions button{{margin:0;padding:5px 9px;font-size:11px}}.service-area{{display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end}}.global-correction{{display:grid;grid-template-columns:auto auto auto minmax(180px,1fr) auto auto auto;align-items:center;gap:6px;margin-top:5px;padding-top:5px;border-top:1px dashed var(--line);font-size:10.5px}}.global-correction strong{{font-size:10px;text-transform:uppercase;letter-spacing:.035em;color:var(--muted)}}.global-correction label{{display:flex;align-items:center;gap:4px;white-space:nowrap}}.global-correction select{{padding:3px 5px;border:1px solid var(--line);border-radius:5px;background:var(--panel);color:var(--ink);font-size:10.5px}}.global-correction .correction-result{{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-variant-numeric:tabular-nums}}.global-correction .correction-result b{{color:var(--ink)}}#save-corrected-midi,#preview-corrected-midi,#reanalyze-corrected{{margin:0;padding:5px 9px;background:var(--panel);font-size:10.5px}}.service-dot{{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--major)}}.service-dot.online{{background:#16a34a}}.service-dot.offline{{background:#dc2626}}.service-text{{font-size:10.5px;color:var(--muted)}}.legend-panel{{margin:0;padding:0;border:0;background:transparent}}.legend-panel summary{{cursor:pointer;font-size:10.5px;font-weight:700;color:var(--muted);list-style:none}}.legend-panel summary::-webkit-details-marker{{display:none}}.legend-content{{position:absolute;right:18px;top:100%;width:min(680px,calc(100vw - 36px));padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--panel);box-shadow:0 8px 24px rgba(0,0,0,.18);font-size:11px;color:var(--muted);line-height:1.7}}@media(max-width:950px){{.header-actions{{align-items:flex-start}}.service-text{{display:none}}.global-correction{{grid-template-columns:auto auto auto 1fr}}#preview-corrected-midi,#reanalyze-corrected,#save-corrected-midi{{grid-row:2}}}}
 .genre-modal-backdrop{{position:fixed;inset:0;z-index:5000;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.48)}}.genre-modal-backdrop[hidden]{{display:none}}.genre-modal{{width:min(440px,calc(100vw - 32px));padding:18px;border:1px solid var(--line);border-radius:12px;background:var(--panel);box-shadow:0 18px 48px rgba(0,0,0,.28)}}.genre-modal h2{{margin:0 0 7px;font-size:18px}}.genre-modal p{{margin:0 0 12px;color:var(--muted);font-size:12px;line-height:1.5}}.genre-modal label{{display:grid;grid-template-columns:auto 1fr;gap:8px;align-items:center;font-size:12px;font-weight:700}}.genre-modal select,.genre-modal input{{width:100%;padding:7px;border:1px solid var(--line);border-radius:7px;background:var(--panel);color:var(--ink);text-transform:uppercase}}.genre-modal-hint{{margin-top:8px!important;font-size:10.5px!important}}.genre-modal-actions{{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}}.number-gap-title{{fill:var(--warn)!important}}
-.pattern-analysis{{margin:0 12px 16px;display:grid;grid-template-columns:1fr;gap:12px;max-width:{sw}px}}.sequence-transition-grid{{display:grid;grid-template-columns:minmax(0,1fr) minmax(430px,.92fr);gap:12px;align-items:stretch}}.analysis-grid{{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.25fr);gap:12px}}.analysis-panel{{background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:12px 14px;min-width:0}}.analysis-panel h2{{margin:0 0 4px;font-size:15px}}.analysis-note{{margin:0 0 9px;color:var(--muted);font-size:11px;line-height:1.45}}.analysis-scroll{{overflow:auto;max-width:100%}}.analysis-table{{width:100%;border-collapse:collapse;table-layout:fixed;font-size:11px}}.analysis-table th,.analysis-table td{{padding:6px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}}.analysis-table th{{color:var(--muted);font-weight:800;white-space:nowrap}}.analysis-table .anum{{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}}.analysis-pattern-link{{font-weight:850;color:var(--slot);text-decoration:none}}.analysis-pattern-link:hover{{text-decoration:underline}}.pattern-reference{{cursor:pointer}}.pattern-hover-preview{{position:fixed;z-index:9999;display:none;width:300px;max-width:min(300px,calc(100vw - 24px));padding:8px;background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:0 10px 34px rgba(0,0,0,.24);pointer-events:none}}.pattern-hover-preview.visible{{display:block}}.pattern-hover-preview .hover-title{{font-size:11px;font-weight:850;margin:0 0 5px;color:var(--text)}}.pattern-hover-preview svg{{display:block;width:100%;height:auto;background:var(--panel);border-radius:7px}}.col-pattern{{width:76px}}.col-count{{width:62px}}.col-pct{{width:62px}}.col-bars{{width:auto}}.col-nextcount{{width:78px}}.col-successors{{width:auto}}.col-base{{width:145px}}.col-sim{{width:82px}}.col-diff{{width:auto}}.col-family{{width:78px}}.col-rep{{width:105px}}.col-members{{width:180px}}.col-parent{{width:170px}}.col-orn{{width:145px}}.family-name{{font-weight:850;white-space:nowrap}}.bars-cell,.variation-cell{{overflow-wrap:anywhere;line-height:1.45}}.transition-chip{{display:inline-block;margin:1px 5px 2px 0;padding:2px 6px;border:1px solid var(--line);border-radius:999px;white-space:nowrap;background:var(--bg)}}.transition-chip small{{color:var(--muted)}}.transition-chip.self-transition{{background:#dbeafe;border-color:#60a5fa;color:#1e3a8a;font-weight:800}}@media(prefers-color-scheme:dark){{.transition-chip.self-transition{{background:#18324f;border-color:#60a5fa;color:#bfdbfe}}}}.analysis-muted{{color:var(--muted)}}.sequence-strip{{display:flex;flex-wrap:wrap;gap:5px;align-items:center}}.sequence-run-wrap{{display:inline-flex;align-items:center;position:relative}}.sequence-run{{display:inline-block;padding:3px 18px 3px 7px;border:1px solid var(--line);border-radius:6px;text-decoration:none;font-size:11px;font-weight:800}}.sequence-run-wrap .sequence-run{{border-radius:6px}}.sequence-play-from{{position:absolute;right:2px;top:50%;transform:translateY(-50%);display:inline-flex!important;align-items:center;justify-content:center;margin:0;padding:0;width:14px;height:18px;min-width:0;min-height:0;border:0;border-radius:3px;font-size:10px;font-weight:900;line-height:1;color:var(--slot);background:transparent;cursor:pointer;visibility:visible!important;opacity:.72}}.sequence-play-from:hover{{opacity:1;background:color-mix(in srgb,var(--slot) 10%,transparent)}}.pattern-run{{color:var(--slot);background:var(--bg)}}.gap-run{{color:var(--muted);font-weight:650;border-style:dashed}}.song-transport{{display:grid;grid-template-columns:auto auto minmax(90px,1fr) auto auto;gap:6px;align-items:center;margin:3px 0 10px}}.song-transport button{{margin:0;padding:4px 8px;font-size:10.5px}}.song-progress{{height:6px;overflow:hidden;border-radius:999px;background:var(--line)}}.song-progress span{{display:block;width:0;height:100%;background:var(--slot)}}.song-position{{font-size:10px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}}.song-now{{min-width:92px;font-size:10px;font-weight:800;color:var(--slot);white-space:nowrap;text-align:right}}.sequence-run.song-active{{outline:2px solid var(--slot);outline-offset:1px;background:var(--panel);box-shadow:0 0 0 3px color-mix(in srgb,var(--slot) 14%,transparent)}}.transition-graph-panel{{overflow:hidden}}.transition-graph-toolbar{{display:flex;gap:10px;align-items:center;justify-content:space-between;margin:-2px 0 4px;font-size:10px;color:var(--muted)}}.transition-graph-toolbar label{{display:flex;align-items:center;gap:5px;font-weight:750}}.transition-graph-filter{{font:inherit;color:var(--text);background:var(--bg);border:1px solid var(--line);border-radius:5px;padding:2px 5px}}.transition-export-actions{{display:inline-flex;gap:5px;align-items:center}}.transition-export-svg,.transition-export-cards{{margin:0;padding:3px 7px;font-size:10px;white-space:nowrap}}.transition-graph-legend{{text-align:right;flex:1}}.transition-graph{{display:block;width:100%;height:auto;max-height:410px;overflow:visible;touch-action:none}}.transition-edge{{stroke:var(--muted);opacity:.42;transition:opacity .12s ease}}.transition-edge.repeated-edge{{stroke:var(--slot);opacity:.62}}.transition-edge.self-edge{{stroke:#3b82f6;opacity:.72}}.transition-arrowhead{{fill:var(--muted)}}.transition-edge-label{{font-size:9px;font-weight:800;text-anchor:middle;paint-order:stroke;stroke:var(--panel);stroke-width:3px;stroke-linejoin:round;fill:var(--muted)}}.transition-node{{cursor:grab}}.transition-node.is-dragging{{cursor:grabbing}}.transition-node circle{{fill:var(--panel);stroke:var(--slot);stroke-width:1.6;vector-effect:non-scaling-stroke;transition:stroke-width .12s ease,fill .12s ease}}.transition-node text{{font-size:9px;font-weight:850;text-anchor:middle;fill:var(--text);pointer-events:none}}.transition-node:hover circle{{stroke-width:3;fill:var(--bg)}}.transition-edge.is-filtered,.transition-edge-label.is-filtered{{display:none}}@media(max-width:1050px){{.sequence-transition-grid{{grid-template-columns:1fr}}}}@media(max-width:900px){{.analysis-grid{{grid-template-columns:1fr}}}}
+.report-tabs{{display:flex;gap:4px;margin:0 12px 8px;max-width:{sw}px;border-bottom:1px solid var(--line)}}.report-tab{{margin:0 0 -1px;padding:7px 14px;border-radius:7px 7px 0 0;background:var(--bg);color:var(--muted)}}.report-tab.active{{background:var(--panel);color:var(--slot);border-bottom-color:var(--panel)}}.report-tab-pane{{display:none}}.report-tab-pane.active{{display:block}}.pattern-analysis,.pattern-hierarchy{{margin:0 12px 16px;display:grid;grid-template-columns:1fr;gap:12px;max-width:{sw}px}}.hier-trc{{display:inline-flex;gap:4px;white-space:nowrap;margin-right:8px}}.hier-members{{display:flex;gap:8px;align-items:flex-start;padding:2px 0}}.hier-members b{{flex:0 0 66px;color:var(--muted);font-size:10px}}.hier-members span{{display:flex;gap:7px;flex-wrap:wrap}}.hierarchy-table sup{{font-size:8px;color:var(--slot)}}.sequence-transition-grid{{display:grid;grid-template-columns:minmax(0,1fr) minmax(430px,.92fr);gap:12px;align-items:stretch}}.analysis-grid{{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.25fr);gap:12px}}.analysis-panel{{background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:12px 14px;min-width:0}}.analysis-panel h2{{margin:0 0 4px;font-size:15px}}.analysis-note{{margin:0 0 9px;color:var(--muted);font-size:11px;line-height:1.45}}.analysis-scroll{{overflow:auto;max-width:100%}}.analysis-table{{width:100%;border-collapse:collapse;table-layout:fixed;font-size:11px}}.analysis-table th,.analysis-table td{{padding:6px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}}.analysis-table th{{color:var(--muted);font-weight:800;white-space:nowrap}}.analysis-table .anum{{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}}.analysis-pattern-link{{font-weight:850;color:var(--slot);text-decoration:none}}.analysis-pattern-link:hover{{text-decoration:underline}}.pattern-reference{{cursor:pointer}}.pattern-hover-preview{{position:fixed;z-index:9999;display:none;width:300px;max-width:min(300px,calc(100vw - 24px));padding:8px;background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:0 10px 34px rgba(0,0,0,.24);pointer-events:none}}.pattern-hover-preview.visible{{display:block}}.pattern-hover-preview .hover-title{{font-size:11px;font-weight:850;margin:0 0 5px;color:var(--text)}}.pattern-hover-preview svg{{display:block;width:100%;height:auto;background:var(--panel);border-radius:7px}}.col-pattern{{width:76px}}.col-count{{width:62px}}.col-pct{{width:62px}}.col-bars{{width:auto}}.col-nextcount{{width:78px}}.col-successors{{width:auto}}.col-base{{width:145px}}.col-sim{{width:82px}}.col-diff{{width:auto}}.col-family{{width:78px}}.col-rep{{width:105px}}.col-members{{width:180px}}.col-parent{{width:170px}}.col-orn{{width:145px}}.family-name{{font-weight:850;white-space:nowrap}}.bars-cell,.variation-cell{{overflow-wrap:anywhere;line-height:1.45}}.transition-chip{{display:inline-block;margin:1px 5px 2px 0;padding:2px 6px;border:1px solid var(--line);border-radius:999px;white-space:nowrap;background:var(--bg)}}.transition-chip small{{color:var(--muted)}}.transition-chip.self-transition{{background:#dbeafe;border-color:#60a5fa;color:#1e3a8a;font-weight:800}}@media(prefers-color-scheme:dark){{.transition-chip.self-transition{{background:#18324f;border-color:#60a5fa;color:#bfdbfe}}}}.analysis-muted{{color:var(--muted)}}.sequence-strip{{display:flex;flex-wrap:wrap;gap:5px;align-items:center}}.sequence-run-wrap{{display:inline-flex;align-items:center;position:relative}}.sequence-run{{display:inline-block;padding:3px 18px 3px 7px;border:1px solid var(--line);border-radius:6px;text-decoration:none;font-size:11px;font-weight:800}}.sequence-run-wrap .sequence-run{{border-radius:6px}}.sequence-play-from{{position:absolute;right:2px;top:50%;transform:translateY(-50%);display:inline-flex!important;align-items:center;justify-content:center;margin:0;padding:0;width:14px;height:18px;min-width:0;min-height:0;border:0;border-radius:3px;font-size:10px;font-weight:900;line-height:1;color:var(--slot);background:transparent;cursor:pointer;visibility:visible!important;opacity:.72}}.sequence-play-from:hover{{opacity:1;background:color-mix(in srgb,var(--slot) 10%,transparent)}}.pattern-run{{color:var(--slot);background:var(--bg)}}.gap-run{{color:var(--muted);font-weight:650;border-style:dashed}}.song-transport{{display:grid;grid-template-columns:auto auto minmax(90px,1fr) auto auto;gap:6px;align-items:center;margin:3px 0 10px}}.song-transport button{{margin:0;padding:4px 8px;font-size:10.5px}}.song-progress{{height:6px;overflow:hidden;border-radius:999px;background:var(--line)}}.song-progress span{{display:block;width:0;height:100%;background:var(--slot)}}.song-position{{font-size:10px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}}.song-now{{min-width:92px;font-size:10px;font-weight:800;color:var(--slot);white-space:nowrap;text-align:right}}.sequence-run.song-active{{outline:2px solid var(--slot);outline-offset:1px;background:var(--panel);box-shadow:0 0 0 3px color-mix(in srgb,var(--slot) 14%,transparent)}}.transition-graph-panel{{overflow:hidden}}.transition-graph-toolbar{{display:flex;gap:10px;align-items:center;justify-content:space-between;margin:-2px 0 4px;font-size:10px;color:var(--muted)}}.transition-graph-toolbar label{{display:flex;align-items:center;gap:5px;font-weight:750}}.transition-graph-filter{{font:inherit;color:var(--text);background:var(--bg);border:1px solid var(--line);border-radius:5px;padding:2px 5px}}.transition-export-actions{{display:inline-flex;gap:5px;align-items:center}}.transition-export-svg,.transition-export-cards{{margin:0;padding:3px 7px;font-size:10px;white-space:nowrap}}.transition-graph-legend{{text-align:right;flex:1}}.transition-graph{{display:block;width:100%;height:auto;max-height:410px;overflow:visible;touch-action:none}}.transition-edge{{stroke:var(--muted);opacity:.42;transition:opacity .12s ease}}.transition-edge.repeated-edge{{stroke:var(--slot);opacity:.62}}.transition-edge.self-edge{{stroke:#3b82f6;opacity:.72}}.transition-arrowhead{{fill:var(--muted)}}.transition-edge-label{{font-size:9px;font-weight:800;text-anchor:middle;paint-order:stroke;stroke:var(--panel);stroke-width:3px;stroke-linejoin:round;fill:var(--muted)}}.transition-node{{cursor:grab}}.transition-node.is-dragging{{cursor:grabbing}}.transition-node circle{{fill:var(--panel);stroke:var(--slot);stroke-width:1.6;vector-effect:non-scaling-stroke;transition:stroke-width .12s ease,fill .12s ease}}.transition-node text{{font-size:9px;font-weight:850;text-anchor:middle;fill:var(--text);pointer-events:none}}.transition-node:hover circle{{stroke-width:3;fill:var(--bg)}}.transition-edge.is-filtered,.transition-edge-label.is-filtered{{display:none}}@media(max-width:1050px){{.sequence-transition-grid{{grid-template-columns:1fr}}}}@media(max-width:900px){{.analysis-grid{{grid-template-columns:1fr}}}}
 #print-gallery{{display:none}}
 @media screen{{
   #matrix,#matrix-preview{{max-width:none}}
@@ -1763,7 +1930,7 @@ def render(path,mid,bars_,bb,skipped_leading_bars=0):
 <div class="summary" title="{header_summary}">{header_summary}</div>
 <div class="header-actions"><div class="tool-groups"><div class="tool-group"><span class="tool-label">View</span><button id="toggle">RAW / QUANTIZED</button><button id="slot-display" type="button" class="quantized-only">Velocity / Accent</button></div><div class="tool-group"><span class="tool-label">Export</span><button id="download-csv" type="button">CSV</button><button id="print-report" type="button">Print / PDF</button></div><span id="number-status"></span></div><div class="service-area"><span id="service-dot" class="service-dot"></span><span id="service-text" class="service-text">Checking playback service…</span><details class="legend-panel"><summary>Legend ▾</summary><div class="legend-content"><div>Velocity: <i class="lg v0"></i>0 (1–31) <i class="lg v1"></i>1 (32–63) <i class="lg v2"></i>2 (64–95) <i class="lg v3"></i>3 (96–127)</div><div>ADX 6-accent: {accent_legend}</div><div>RAW notes: <i class="lg" style="background:#2563eb"></i>original MIDI note-on; deviation is not color-coded</div><div>RAW: <i class="lg" style="border:2px solid #d32f2f"></i>ORN flam grace · <i class="lg" style="background:#2563eb;border:2px solid #d32f2f"></i>off-grid, omitted from GRID · red label = outside SLOT_MAP</div></div></details></div></div>
 <div class="global-correction"><strong>Grid correction</strong><label>Grid <select id="global-grid"><option value="16">16</option><option value="32">32</option><option value="8T">8T</option><option value="16T">16T</option></select></label><label>Tol. <select id="global-tolerance"><option value="1">±1 tick</option><option value="2">±2 ticks</option><option value="3">±3 ticks</option></select></label><span id="correction-result" class="correction-result"></span><button id="preview-corrected-midi" type="button">Preview corrected</button><button id="reanalyze-corrected" type="button" title="Recalculate Condensed Bar Sequence and all downstream analyses from the currently displayed card state (original or corrected)">Reanalyze</button><button id="save-corrected-midi" type="button">Save corrected MIDI…</button></div>
-</header><div id="genre-modal-backdrop" class="genre-modal-backdrop" hidden><div class="genre-modal" role="dialog" aria-modal="true" aria-labelledby="genre-modal-title"><h2 id="genre-modal-title">Select genre</h2><p>The filename did not identify a genre, so PatternLab fell back to DRM. Type a 3-character genre code to apply to all pattern cards.</p><label>Genre code <input id="genre-modal-code" type="text" inputmode="text" maxlength="3" placeholder="e.g. SKA" autocomplete="off"/></label><p class="genre-modal-hint">Enter a 3-character genre code. It will be added to every card for this report.</p><div class="genre-modal-actions"><button id="genre-modal-apply" type="button">Apply to all cards</button></div></div></div><main><svg id="matrix" xmlns="http://www.w3.org/2000/svg" width="{sw}" height="{sh}" viewBox="0 0 {sw} {sh}">{body_html}</svg><svg id="matrix-preview" xmlns="http://www.w3.org/2000/svg" style="display:none"></svg></main><section id="print-gallery" aria-hidden="true"></section>{analysis_html}<details><summary>Analysis notes</summary><p>Each block is checked only against earlier blocks in the same MIDI file. Pattern identity is checked after SLOT_MAP abstraction, using relative onset tick and abstract slot; velocity and note duration are ignored. Notes outside the selected map retain raw-note identity. Repeated source bars keep the same Pattern number but are omitted from the card gallery; their occurrence count and source bars are summarized in the representative card and analysis table. When raw GM notes differ but collapse to the same abstract slots, the card and CSV describe the raw-note variant.</p><p>Trailing empty bars are discarded from the one-bar pattern stream. A final musical bar containing only one onset group at its beginning is labeled ENDING HIT and excluded from the pattern catalog.</p><p>Each card initially uses the automatically detected resolution. Its own Resolution selector can immediately switch the reference grid and SLOT quantization among 16, 32, 8T, and 16T without affecting other cards. Reloading the HTML restores the original automatic selections. Grid fit is a separate visual diagnostic: for each candidate grid it reports the percentage of RAW note-on events that fall within 5% of one grid step from the nearest line. Best marks the highest such percentage, with mean normalized error used only to break ties. It does not overwrite the shared rhythm-analysis decision.</p><p>If no SLOT_MAP covers every note, the nearest map is used, the card receives a red border, and uncovered MIDI notes are listed as MISSING NOTES. Ties fall back conservatively toward lower IDs, beginning with LEGACY 12.</p><p>RAW view places every note-on circle at its original MIDI tick position and extends a horizontal line to the recorded note-off position. Very short durations receive a two-pixel minimum display line; the note-on position itself is never moved. The vertical subdivision lines are reference overlays only; changing a card’s Resolution selector never moves RAW notes. Velocity controls circle size. RAW note color is uniform blue and does not encode distance from the selected grid; the existing deviation classes are retained only for internal diagnostics. Notes that currently trigger automatic ORN candidacy use the same blue fill as ordinary RAW notes and are distinguished only by a red outline: removable grace notes of detected flam pairs. Very weak hits (velocity ≤ 30) are a 6-accent strength diagnostic only and do not trigger ORN candidacy. Ordinary off-grid notes that are omitted from the selected GRID resolution keep their RAW fill color, receive a red outline, and show the grid omission reason on hover. Hovering a purple note shows the exact reason, including velocity threshold or flam confidence, tick gap, threshold, and whether the grace is removed from subdivision. Flam main hits remain blue because they stay in the ADX grid.</p><p>The Play button sends MIDI generated from the current Compare Mode directly to the local PatternLab playback service at <code>127.0.0.1:8123</code>, which uses the configured FluidSynth executable and SF2 SoundFont. The GRID display button switches between the original four-band MIDI Velocity view and the ADX 6-accent preview. Each non-duplicate card can play either RAW only or RAW → Quantized. Every included section is repeated twice, and adjacent sections are separated by one quarter-note beat. Quantized playback uses the five playable levels of the JSON-defined 6-accent scheme. The displayed symbol, label, velocity range, and representative velocity come from accent_levels.json; an empty cell represents Rest. Flam grace notes marked for removal from subdivision are intentionally omitted there and belong to ORN; the main hit remains in the grid. Very weak hits remain regular GRID hits when they lie exactly on the selected grid. Only note-ons that already lie exactly on the selected grid are shown in SLOT view; off-grid note-ons are never snapped into a cell. When multiple retained on-grid hits occupy one slot/cell, the strongest velocity is shown.</p><p><strong>Global grid correction</strong> is an explicit optional preprocessing step. It can move only channel-10 note onsets that are within ±1, ±2, or ±3 ticks of the selected whole-song 16/32/8T/16T grid. A paired note-off is moved by the same amount so duration is preserved. Events farther from the grid are left untouched. The report previews how many onsets would change. Preview corrected re-runs the pattern-card analysis on the proposed corrected MIDI without modifying the source file. Hits that cross a one-bar boundary therefore move into the next pattern card, and duplicate/unique cards and pattern numbers are recalculated from the corrected timing. The downstream report beginning with Condensed Bar Sequence is intentionally left unchanged during Preview. Click Reanalyze to rebuild Condensed Bar Sequence, distribution, transitions, transition graph, core grooves, and nearest-neighbour variations from the card state currently shown: corrected while Preview corrected is active, or original after Show original. Corrected-preview duplicate bars are omitted from the gallery; only representative one-bar patterns remain, while their frequencies are preserved by the corrected card analysis. The corrected-preview cards are playable through the same local playback service; their RAW stage uses the corrected timing, and RAW → Quantized applies the selected card grid to that corrected timing. Preview toggles back to the untouched original cards. Changing Grid or Tolerance invalidates any corrected downstream analysis and restores the original downstream report until Reanalyze is clicked again. Save corrected MIDI downloads a separate corrected file, and the source MIDI is never overwritten.</p><p><strong>Per-card pattern save</strong> writes the currently active card state directly as ADT v2.3 Final using ORIENTATION=SLOT. The card's last selected Resolution is authoritative. Exact on-grid hits form the ADT grid; detected flam grace notes and ordinary off-grid hits are excluded from ADT and, when ORN is checked, written to the same-basename ORN sidecar. In corrected preview, export uses the corrected card data. RAW / QUANTIZED is display-only and does not alter export semantics. A blank pattern number produces TMP_#### from the card's current Pattern number.</p><p><strong>Source MIDI transport</strong> follows the timing source used by the downstream report and highlights the currently sounding run in Condensed Bar Sequence. It plays the exact original source MIDI while the report is original, and the corrected MIDI after Reanalyze switches the downstream report to corrected timing. Timing follows the MIDI tempo map; the song is not reconstructed from extracted patterns.</p><p><strong>Pattern Transition Graph</strong> folds the actual one-bar song path into directed pattern-to-pattern relations. Node size reflects pattern occurrences and edge width reflects observed transition count. The graph layout always uses all observed transitions. All edges are shown by default; the selector can reduce the view to repeated edges only or suppress self-transitions. Graph nodes reuse the same hover preview and RAW click playback as other analysis references.</p><p>SLOT_MAP usage: <code>{html.escape(json.dumps(summary,ensure_ascii=False))}</code></p><p>The shared adc_rhythm_analysis module owns the complete subdivision decision: flam detection, grace-note exclusion, onset phase, note-duration evidence, and conservative filename hints. The same flam-filtered events are used for both phase and duration scoring. Beat anchors and the shared half-beat remain excluded from phase evidence.</p></details><script>(()=>{{
+</header><div id="genre-modal-backdrop" class="genre-modal-backdrop" hidden><div class="genre-modal" role="dialog" aria-modal="true" aria-labelledby="genre-modal-title"><h2 id="genre-modal-title">Select genre</h2><p>The filename did not identify a genre, so PatternLab fell back to DRM. Type a 3-character genre code to apply to all pattern cards.</p><label>Genre code <input id="genre-modal-code" type="text" inputmode="text" maxlength="3" placeholder="e.g. SKA" autocomplete="off"/></label><p class="genre-modal-hint">Enter a 3-character genre code. It will be added to every card for this report.</p><div class="genre-modal-actions"><button id="genre-modal-apply" type="button">Apply to all cards</button></div></div></div><main><svg id="matrix" xmlns="http://www.w3.org/2000/svg" width="{sw}" height="{sh}" viewBox="0 0 {sw} {sh}">{body_html}</svg><svg id="matrix-preview" xmlns="http://www.w3.org/2000/svg" style="display:none"></svg></main><section id="print-gallery" aria-hidden="true"></section><nav class="report-tabs" aria-label="PatternLab reports"><button type="button" class="report-tab active" data-report-tab="analysis">Analysis</button><button type="button" class="report-tab" data-report-tab="hierarchy">Hierarchy</button></nav><div class="report-tab-pane active" data-report-pane="analysis">{analysis_html}</div><div class="report-tab-pane" data-report-pane="hierarchy">{hierarchy_html}</div><details><summary>Analysis notes</summary><p>Each block is checked only against earlier blocks in the same MIDI file. Pattern identity is checked after SLOT_MAP abstraction, using relative onset tick and abstract slot; velocity and note duration are ignored. Notes outside the selected map retain raw-note identity. Repeated source bars keep the same Pattern number but are omitted from the card gallery; their occurrence count and source bars are summarized in the representative card and analysis table. When raw GM notes differ but collapse to the same abstract slots, the card and CSV describe the raw-note variant.</p><p>Trailing empty bars are discarded from the one-bar pattern stream. A final musical bar containing only one onset group at its beginning is labeled ENDING HIT and excluded from the pattern catalog.</p><p>Each card initially uses the automatically detected resolution. Its own Resolution selector can immediately switch the reference grid and SLOT quantization among 16, 32, 8T, and 16T without affecting other cards. Reloading the HTML restores the original automatic selections. Grid fit is a separate visual diagnostic: for each candidate grid it reports the percentage of RAW note-on events that fall within 5% of one grid step from the nearest line. Best marks the highest such percentage, with mean normalized error used only to break ties. It does not overwrite the shared rhythm-analysis decision.</p><p>PatternLab infers one song-level SLOT_MAP from the complete CH10 note inventory. It chooses the registered base requiring the fewest local replacements, uses slots that are unused anywhere in the song for those replacements, and applies that single map to every pattern card. Ties fall back conservatively toward lower IDs, beginning with LEGACY. If the song still cannot fit within the available 12 slots, residual uncovered MIDI notes are listed as MISSING NOTES.</p><p>RAW view places every note-on circle at its original MIDI tick position and extends a horizontal line to the recorded note-off position. Very short durations receive a two-pixel minimum display line; the note-on position itself is never moved. The vertical subdivision lines are reference overlays only; changing a card’s Resolution selector never moves RAW notes. Velocity controls circle size. RAW note color is uniform blue and does not encode distance from the selected grid; the existing deviation classes are retained only for internal diagnostics. Notes that currently trigger automatic ORN candidacy use the same blue fill as ordinary RAW notes and are distinguished only by a red outline: removable grace notes of detected flam pairs. Very weak hits (velocity ≤ 30) are a 6-accent strength diagnostic only and do not trigger ORN candidacy. Ordinary off-grid notes that are omitted from the selected GRID resolution keep their RAW fill color, receive a red outline, and show the grid omission reason on hover. Hovering a purple note shows the exact reason, including velocity threshold or flam confidence, tick gap, threshold, and whether the grace is removed from subdivision. Flam main hits remain blue because they stay in the ADX grid.</p><p>The Play button sends MIDI generated from the current Compare Mode directly to the local PatternLab playback service at <code>127.0.0.1:8123</code>, which uses the configured FluidSynth executable and SF2 SoundFont. The GRID display button switches between the original four-band MIDI Velocity view and the ADX 6-accent preview. Each non-duplicate card can play either RAW only or RAW → Quantized. Every included section is repeated twice, and adjacent sections are separated by one quarter-note beat. Quantized playback uses the five playable levels of the JSON-defined 6-accent scheme. The displayed symbol, label, velocity range, and representative velocity come from accent_levels.json; an empty cell represents Rest. Flam grace notes marked for removal from subdivision are intentionally omitted there and belong to ORN; the main hit remains in the grid. Very weak hits remain regular GRID hits when they lie exactly on the selected grid. Only note-ons that already lie exactly on the selected grid are shown in SLOT view; off-grid note-ons are never snapped into a cell. When multiple retained on-grid hits occupy one slot/cell, the strongest velocity is shown.</p><p><strong>Global grid correction</strong> is an explicit optional preprocessing step. It can move only channel-10 note onsets that are within ±1, ±2, or ±3 ticks of the selected whole-song 16/32/8T/16T grid. A paired note-off is moved by the same amount so duration is preserved. Events farther from the grid are left untouched. The report previews how many onsets would change. Preview corrected re-runs the pattern-card analysis on the proposed corrected MIDI without modifying the source file. Hits that cross a one-bar boundary therefore move into the next pattern card, and duplicate/unique cards and pattern numbers are recalculated from the corrected timing. The downstream report beginning with Condensed Bar Sequence is intentionally left unchanged during Preview. Click Reanalyze to rebuild both Analysis and Hierarchy — Condensed Bar Sequence, distribution, transitions, transition graph, core grooves, nearest-neighbour variations, TRCs, and CPFs — from the card state currently shown: corrected while Preview corrected is active, or original after Show original. Corrected-preview duplicate bars are omitted from the gallery; only representative one-bar patterns remain, while their frequencies are preserved by the corrected card analysis. The corrected-preview cards are playable through the same local playback service; their RAW stage uses the corrected timing, and RAW → Quantized applies the selected card grid to that corrected timing. Preview toggles back to the untouched original cards. Changing Grid or Tolerance invalidates any corrected downstream analysis and restores the original downstream report until Reanalyze is clicked again. Save corrected MIDI downloads a separate corrected file, and the source MIDI is never overwritten.</p><p><strong>Per-card pattern save</strong> writes the currently active card state directly as ADT v2.3 Final using ORIENTATION=SLOT. The card's last selected Resolution is authoritative. Exact on-grid hits form the ADT grid; detected flam grace notes and ordinary off-grid hits are excluded from ADT and, when ORN is checked, written to the same-basename ORN sidecar. In corrected preview, export uses the corrected card data. RAW / QUANTIZED is display-only and does not alter export semantics. A blank pattern number produces TMP_#### from the card's current Pattern number.</p><p><strong>Source MIDI transport</strong> follows the timing source used by the downstream report and highlights the currently sounding run in Condensed Bar Sequence. It plays the exact original source MIDI while the report is original, and the corrected MIDI after Reanalyze switches the downstream report to corrected timing. Timing follows the MIDI tempo map; the song is not reconstructed from extracted patterns.</p><p><strong>Pattern Transition Graph</strong> folds the actual one-bar song path into directed pattern-to-pattern relations. Node size reflects pattern occurrences and edge width reflects observed transition count. The graph layout always uses all observed transitions. All edges are shown by default; the selector can reduce the view to repeated edges only or suppress self-transitions. Graph nodes reuse the same hover preview and RAW click playback as other analysis references.</p><p>SLOT_MAP usage: <code>{html.escape(json.dumps(summary,ensure_ascii=False))}</code></p><p>The shared adc_rhythm_analysis module owns the complete subdivision decision: flam detection, grace-note exclusion, onset phase, note-duration evidence, and conservative filename hints. The same flam-filtered events are used for both phase and duration scoring. Beat anchors and the shared half-beat remain excluded from phase evidence.</p></details><script>(()=>{{
 const s=document.getElementById('matrix'),previewSvg=document.getElementById('matrix-preview'),m=document.getElementById('mode'),slotDisplay=document.getElementById('slot-display');slotDisplay.style.display='none';
 const BLOCK_DATA={block_data_json};
 const SOURCE_MIDI_NAME={json.dumps(path.name)};
@@ -1853,6 +2020,7 @@ const TPQ={mid.ticks_per_beat};
 const SOURCE_STEM={json.dumps(path.stem)};const INFERRED_GENRE={json.dumps(inferred_genre)};const GENRE_FALLBACK={json.dumps(genre_fallback)};
 const GLOBAL_CORRECTION={correction_json};
 const ORIGINAL_ANALYSIS_HTML=document.getElementById('pattern-analysis')?.outerHTML||'';
+const ORIGINAL_HIERARCHY_HTML=document.getElementById('pattern-hierarchy')?.outerHTML||'';
 const PLAYBACK_BASE='http://127.0.0.1:8123';
 const playbackUrl=path=>PLAYBACK_BASE+path;
 async function checkService(){{
@@ -1867,6 +2035,11 @@ async function checkService(){{
     text.textContent='Playback service unavailable';
   }}
 }}
+document.querySelectorAll('.report-tab').forEach(button=>button.addEventListener('click',()=>{{
+  const name=button.dataset.reportTab;
+  document.querySelectorAll('.report-tab').forEach(x=>x.classList.toggle('active',x===button));
+  document.querySelectorAll('.report-tab-pane').forEach(x=>x.classList.toggle('active',x.dataset.reportPane===name));
+}}));
 checkService();
 function correctionVariant(){{
   const grid=document.getElementById('global-grid')?.value||GLOBAL_CORRECTION.auto_resolution||'16';
@@ -1909,6 +2082,16 @@ function swapPatternAnalysis(text){{
     const target=dst.querySelector(selector),source=src.querySelector(selector);
     if(target&&source)target.innerHTML=source.innerHTML;
   }});
+  bindAnalysisInteractionControls(dst);
+}}
+function hierarchySectionFromHtml(text){{
+  const template=document.createElement('template');template.innerHTML=String(text||'').trim();
+  return template.content.querySelector('#pattern-hierarchy');
+}}
+function swapPatternHierarchy(text){{
+  const dst=document.getElementById('pattern-hierarchy'),src=hierarchySectionFromHtml(text);
+  if(!dst||!src)return;
+  dst.innerHTML=src.innerHTML;
   bindAnalysisInteractionControls(dst);
 }}
 function correctionBusy(message){{
@@ -1980,9 +2163,11 @@ async function reanalyzeCurrentReport(){{
     const variant=correctionVariant();
     if(!variant||!variant.preview){{correctionReady();return;}}
     swapPatternAnalysis(variant.preview.analysis_html||ORIGINAL_ANALYSIS_HTML);
+    swapPatternHierarchy(variant.preview.hierarchy_html||ORIGINAL_HIERARCHY_HTML);
     analysisCorrectedActive=true;
   }}else{{
     swapPatternAnalysis(ORIGINAL_ANALYSIS_HTML);
+    swapPatternHierarchy(ORIGINAL_HIERARCHY_HTML);
     analysisCorrectedActive=false;
   }}
   resetSongTransport();
@@ -1991,6 +2176,7 @@ async function reanalyzeCurrentReport(){{
 function restoreOriginalAnalysis(){{
   if(!analysisCorrectedActive)return;
   swapPatternAnalysis(ORIGINAL_ANALYSIS_HTML);
+  swapPatternHierarchy(ORIGINAL_HIERARCHY_HTML);
   analysisCorrectedActive=false;
   resetSongTransport();
 }}
@@ -2730,8 +2916,12 @@ function sourceTextForSave(panel){{
 }}
 function renderAdtForCard(panel,name,model){{
   const meter=(panel.dataset.timeSig||'4/4').split('→')[0];
-  const slotMap=model.data.slot_map_name||panel.dataset.slotMap||'LEGACY';
-  const lines=['; ADT v2.3','; Drum Pattern Exchange Format',`NAME=${{name}}`,`SOURCE=${{sourceTextForSave(panel)}}`,`TIME_SIG=${{meter}}`,`SUBDIV=${{model.subdiv}}`,`LENGTH=${{model.length}}`,`SLOT_MAP_ID=${{slotMap}}`,'ORIENTATION=SLOT','','[DATA]'];
+  const slotMap=model.data.slot_map_base_name||model.data.slot_map_name||panel.dataset.slotMap||'LEGACY';
+  const lines=['; ADT v2.3','; Drum Pattern Exchange Format',`NAME=${{name}}`,`SOURCE=${{sourceTextForSave(panel)}}`,`TIME_SIG=${{meter}}`,`SUBDIV=${{model.subdiv}}`,`LENGTH=${{model.length}}`,`SLOT_MAP_ID=${{slotMap}}`];
+  for(const ov of (model.data.slot_map_overrides||[])){{
+    lines.push(`SLOT${{ov.slot}}=${{ov.label}}@${{ov.note}},${{ov.name}}`);
+  }}
+  lines.push('ORIENTATION=SLOT','','[DATA]');
   model.rows.forEach(row=>lines.push(row.join('')));
   return lines.join('\\n')+'\\n';
 }}
@@ -3091,7 +3281,8 @@ def _process_one_midi(path: Path, output: Path, *, skip_leading_empty_bars_flag:
         ev,ts,mx=collect(mid); all_bars=make_bars(mid.ticks_per_beat,ts,mx); bars_=all_bars; skipped=0
         if skip_leading_empty_bars_flag:
             bars_,skipped=skip_leading_empty_bars(all_bars,ev)
-        bb=blocks(bars_,ev,mid.ticks_per_beat,path.name)
+        song_map,song_unknown=choose_song_map({e.note for e in ev})
+        bb=blocks(bars_,ev,mid.ticks_per_beat,path.name,song_map=song_map)
         # Windows preserves an existing directory entry's old letter case when the
         # same case-insensitive filename is opened again. Remove a legacy
         # *_patternlab.html entry first so the requested *_PatternLab.html spelling
