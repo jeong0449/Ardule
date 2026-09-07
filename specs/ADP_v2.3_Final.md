@@ -2,24 +2,31 @@
 
 **The ADX Platform for Drum Patternology**
 
-Version: **2.3 Final**  
-Status: **Final Public Specification**  
-Created: **2026-08-01**  
-Last Updated: **2026-08-06**
+Version: **2.3 Final**\
+Status: **Final Public Specification**\
+Created: **2026-08-01**\
+Last Updated: **2026-09-07**
 
----
+------------------------------------------------------------------------
 
 ## 1. Overview
 
-ADP (*Ardule Drum Pattern*) is the compact binary cache format of the ADX Platform.
+ADP (*Ardule Drum Pattern*) is the compact binary cache format of the
+ADX Platform.
 
-An ADP file is generated from an ADT v2.3 Final file. It preserves the regular step grid, slot indices, and five playable accent levels in a representation intended for efficient storage and playback.
+An ADP file is generated from an ADT v2.3 Final file. It preserves the
+regular step grid, slot indices, and five playable accent levels in a
+representation intended for efficient storage and playback.
 
-ADP is a cache, not the canonical editable source. ADT remains the human-readable source format. Ornament events that cannot be represented by the selected regular grid are stored separately in a same-basename ORN sidecar.
+ADP is a cache, not the canonical editable source. ADT remains the
+human-readable source format. Ornament events that cannot be represented
+by the selected regular grid are stored separately in a same-basename
+ORN sidecar.
 
-Because ADP is derived data, files generated from earlier ADP v2.3 drafts shall be regenerated from their authoritative ADT sources.
+Because ADP is derived data, files generated from earlier ADP v2.3
+drafts shall be regenerated from their authoritative ADT sources.
 
----
+------------------------------------------------------------------------
 
 ## 2. Byte Order and Limits
 
@@ -27,102 +34,125 @@ All multi-byte integer fields use **little-endian** byte order.
 
 An ADP v2.3 Final file consists of:
 
-```text
+``` text
 12-byte header
 variable-length payload
 ```
 
 Format limits:
 
-- `LENGTH`: 1–255 steps
-- slot index: 0–15
-- registered slot-map ID: 0–254
-- inline slot-map ID: 255
-- payload size: 0–65535 bytes
-- per-step hit count: 0–255
-- stored accent value: 1–5
+-   `LENGTH`: 1--255 steps
+-   slot index: 0--15
+-   registered slot-map ID: 0--254
+-   inline slot-map ID: 255
+-   payload size: 0--65535 bytes
+-   per-step hit count: 0--255
+-   stored accent value: 1--5
 
 The packed-hit representation supports at most 16 slots.
 
----
+------------------------------------------------------------------------
 
 ## 3. Header
 
 The ADP v2.3 Final header is exactly 12 bytes.
 
-The magic value **`ADP3`** identifies the **third-generation ADP binary file format**. It identifies the binary container family rather than the specification revision itself.
+The magic value **`ADP3`** identifies the **third-generation ADP binary
+file format**. It identifies the binary container family rather than the
+specification revision itself.
 
-The actual specification revision is carried independently in the **Version** field. This separation allows future revisions of the ADP3 binary format while retaining the same file-family identifier.
+The actual specification revision is carried independently in the
+**Version** field. This separation allows future revisions of the ADP3
+binary format while retaining the same file-family identifier.
 
+  -------------------------------------------------------------------------
+                Offset                 Size Field           Description
+  -------------------- -------------------- --------------- ---------------
+                `0x00`                    4 Magic           ASCII `ADP3`
 
-| Offset | Size | Field | Description |
-|---:|---:|---|---|
-| `0x00` | 4 | Magic | ASCII `ADP3` |
-| `0x04` | 1 | Version | Decimal `23` |
-| `0x05` | 1 | SUBDIV code | `0` = `16`, `1` = `32`, `2` = `8T`, `3` = `16T` |
-| `0x06` | 1 | LENGTH | Number of steps |
-| `0x07` | 1 | SLOT_MAP_ID | Registered numeric ID, or `255` for `INLINE` |
-| `0x08` | 2 | Payload Bytes | Payload length in bytes |
-| `0x0A` | 2 | Payload CRC16 | CRC16-CCITT of the payload only |
+                `0x04`                    1 Version         Decimal `23`
+
+                `0x05`                    1 SUBDIV code     `0` = `16`, `1`
+                                                            = `32`, `2` =
+                                                            `8T`, `3` =
+                                                            `16T`
+
+                `0x06`                    1 LENGTH          Number of steps
+
+                `0x07`                    1 SLOT_MAP_ID     Registered
+                                                            numeric ID, or
+                                                            `255` for
+                                                            `INLINE`
+
+                `0x08`                    2 Payload Bytes   Payload length
+                                                            in bytes
+
+                `0x0A`                    2 Payload CRC16   CRC16-CCITT of
+                                                            the payload
+                                                            only
+  -------------------------------------------------------------------------
 
 The header corresponds to the following little-endian structure:
 
-```text
+``` text
 <4sBBBBHH
 ```
 
 A reader shall reject a file when:
 
-- the magic is not `ADP3`;
-- the version is not `23`;
-- the subdivision code is unknown;
-- `LENGTH` is zero;
-- the actual payload length differs from `Payload Bytes`; or
-- the calculated payload CRC differs from `Payload CRC16`.
+-   the magic is not `ADP3`;
+-   the version is not `23`;
+-   the subdivision code is unknown;
+-   `LENGTH` is zero;
+-   the actual payload length differs from `Payload Bytes`; or
+-   the calculated payload CRC differs from `Payload CRC16`.
 
 ### 3.1 SUBDIV code table
 
-| Code | ADT `SUBDIV` value | Grid meaning | Steps per quarter note |
-|---:|---|---|---:|
-| `0` | `16` | Straight sixteenth-note grid | 4 |
-| `1` | `32` | Straight thirty-second-note grid | 8 |
-| `2` | `8T` | Eighth-note triplet grid | 3 |
-| `3` | `16T` | Sixteenth-note triplet grid | 6 |
+    Code ADT `SUBDIV` value   Grid meaning                         Steps per quarter note
+  ------ -------------------- ---------------------------------- ------------------------
+     `0` `16`                 Straight sixteenth-note grid                              4
+     `1` `32`                 Straight thirty-second-note grid                          8
+     `2` `8T`                 Eighth-note triplet grid                                  3
+     `3` `16T`                Sixteenth-note triplet grid                               6
 
-The converter shall preserve the `SUBDIV` value recorded in the source ADT file. It shall not reclassify the pattern resolution.
+The converter shall preserve the `SUBDIV` value recorded in the source
+ADT file. It shall not reclassify the pattern resolution.
 
----
+------------------------------------------------------------------------
 
 ## 4. Payload
 
-The payload contains exactly `LENGTH` step records in chronological order.
+The payload contains exactly `LENGTH` step records in chronological
+order.
 
 Each step is encoded as:
 
-```text
+``` text
 u8 hit_count
 hit_count × u8 packed_hit
 ```
 
 A silent step therefore occupies one byte:
 
-```text
+``` text
 00
 ```
 
-Hits within a step are written in ascending slot-index order by the reference writer.
+Hits within a step are written in ascending slot-index order by the
+reference writer.
 
 ### 4.1 Packed hit
 
 Each hit occupies one byte:
 
-```text
+``` text
 packed_hit = (slot_index << 3) | accent
 ```
 
 Bit layout:
 
-```text
+``` text
 bit 7      reserved; shall be 0
 bits 6–3   slot index (0–15)
 bits 2–0   accent level (1–5)
@@ -130,41 +160,48 @@ bits 2–0   accent level (1–5)
 
 The fields are decoded as:
 
-```text
+``` text
 slot_index = packed_hit >> 3
 accent     = packed_hit & 0x07
 ```
 
-A conforming writer shall never encode accent value `0` as a packed hit. Rest is represented by the absence of a hit for that slot in that step.
+A conforming writer shall never encode accent value `0` as a packed hit.
+Rest is represented by the absence of a hit for that slot in that step.
 
 A conforming reader shall reject:
 
-- packed hits with bit 7 set;
-- slot indices outside the selected slot map;
-- accent value `0`;
-- accent values `6` or `7`;
-- duplicate slot indices within one step record.
+-   packed hits with bit 7 set;
+-   slot indices outside the selected slot map;
+-   accent value `0`;
+-   accent values `6` or `7`;
+-   duplicate slot indices within one step record.
 
 ### 4.2 Accent levels
 
-ADP preserves the five playable ADT v2.3 Final accent levels without collapsing them.
+ADP preserves the five playable ADT v2.3 Final accent levels without
+collapsing them.
 
-| Value | ADT symbol | Meaning | Stored in payload |
-|---:|---|---|---|
-| `0` | `.` | Rest | No |
-| `1` | `-` | Very Weak / Ghost | Yes |
-| `2` | `x` | Weak | Yes |
-| `3` | `o` | Medium | Yes |
-| `4` | `^` | Strong | Yes |
-| `5` | `@` | Accent | Yes |
+    Value ADT symbol   Meaning             Stored in payload
+  ------- ------------ ------------------- -------------------
+      `0` `.`          Rest                No
+      `1` `-`          Very Weak / Ghost   Yes
+      `2` `x`          Weak                Yes
+      `3` `o`          Medium              Yes
+      `4` `^`          Strong              Yes
+      `5` `@`          Accent              Yes
 
-The authoritative velocity ranges and representative MIDI velocities are defined outside ADP in `accent_levels.json`.
+The authoritative velocity ranges and representative MIDI velocities are
+defined outside ADP in `accent_levels.json`.
 
-ADP stores only the discrete accent value. It does not store the original MIDI velocity, velocity range, representative velocity, label, or textual symbol.
+ADP stores only the discrete accent value. It does not store the
+original MIDI velocity, velocity range, representative velocity, label,
+or textual symbol.
 
-The reference ADT-to-ADP converter shall obtain symbol-to-level mappings from the `6-accent` scheme in `accent_levels.json`. It shall not maintain a separate hard-coded accent conversion table.
+The reference ADT-to-ADP converter shall obtain symbol-to-level mappings
+from the `6-accent` scheme in `accent_levels.json`. It shall not
+maintain a separate hard-coded accent conversion table.
 
----
+------------------------------------------------------------------------
 
 ## 5. Slot Maps
 
@@ -172,34 +209,71 @@ The reference ADT-to-ADP converter shall obtain symbol-to-level mappings from th
 
 ### 5.1 Registered maps
 
-Values 0–254 identify registered maps in `slot_map_definitions.json`.
+Values 0--254 identify registered maps in `slot_map_definitions.json`.
 
 The current default map is:
 
-```text
+``` text
 0 = LEGACY
 ```
 
-An ADP reader shall use the registered map corresponding to the numeric ID. ADP does not embed registered slot definitions.
+An ADP reader shall use the registered map corresponding to the numeric
+ID. ADP does not embed registered slot definitions.
 
-### 5.2 Inline maps
+### 5.2 Local / inline maps
 
 Value `255` means:
 
-```text
+``` text
 SLOT_MAP_ID = INLINE
 ```
 
-An INLINE ADP shall be accompanied by a same-basename ADT file in the same directory:
+`INLINE` is the ADP representation used when the effective slot map
+cannot be identified solely by a registered numeric map ID. This
+includes an ADT that selects a registered base map but locally overrides
+one or more `SLOTn` definitions.
 
-```text
+For example:
+
+``` text
+SLOT_MAP=LEGACY
+SLOT11=P54,54,54
+```
+
+uses the registered `LEGACY` map as its base while replacing only slot
+11. The unchanged slots inherit their definitions from `LEGACY`.
+
+The generated ADP shall use:
+
+``` text
+SLOT_MAP_ID = 255
+```
+
+The ADP payload itself remains unchanged: hits still store only slot
+indices and accent values. No MIDI-note mapping or textual slot
+definition is added to the ADP payload or 12-byte header.
+
+An ADP with `SLOT_MAP_ID=255` shall be accompanied by a same-basename
+ADT file in the same directory:
+
+``` text
 ABC_0001.ADP
 ABC_0001.ADT
 ```
 
-The companion ADT supplies the `SLOT0...SLOTn` definitions required to interpret slot indices. The reference converter copies the source ADT beside the generated ADP only for INLINE slot maps.
+The companion ADT supplies the registered base-map name and any local
+`SLOTn` overrides required to resolve the effective slot definitions. A
+reader shall first resolve the registered base map and then apply the
+local overrides.
 
----
+The reference converter copies the source ADT beside the generated ADP
+only when the effective map is local and therefore requires
+`SLOT_MAP_ID=255`.
+
+A registered map with no local overrides continues to use its registered
+numeric ID and does not require a companion ADT for slot interpretation.
+
+------------------------------------------------------------------------
 
 ## 6. CRC16-CCITT
 
@@ -207,7 +281,7 @@ The companion ADT supplies the `SLOT0...SLOTn` definitions required to interpret
 
 Parameters:
 
-```text
+``` text
 Polynomial: 0x1021
 Initial value: 0xFFFF
 Input reflection: none
@@ -217,7 +291,7 @@ Final XOR: none
 
 Reference pseudocode:
 
-```text
+``` text
 crc = 0xFFFF
 
 for each byte:
@@ -232,41 +306,48 @@ for each byte:
 
 The 16-bit result is stored little-endian in the header.
 
----
+------------------------------------------------------------------------
 
 ## 7. File Association
 
-The pattern identifier is carried by the filename rather than by the ADP header.
+The pattern identifier is carried by the filename rather than by the ADP
+header.
 
 Example:
 
-```text
+``` text
 WLZ_0005.ADP
 ```
 
 Related files use the same basename:
 
-```text
+``` text
 WLZ_0005.ADT
 WLZ_0005.ADP
 WLZ_0005.ORN
 ```
 
-A same-basename ORN file is optional. It adds only ornament events that remain outside the selected ADT/ADP grid.
+A same-basename ORN file is optional. It adds only ornament events that
+remain outside the selected ADT/ADP grid.
 
-Grid-representable notes shall already be present in ADT and ADP and shall not be duplicated in ORN.
+Grid-representable notes shall already be present in ADT and ADP and
+shall not be duplicated in ORN.
 
-ADP v2.3 Final does not store fields such as `NAME`, `SOURCE`, `TIME_SIG`, `PPQN`, `KIT`, or textual slot definitions in its 12-byte header.
+ADP v2.3 Final does not store fields such as `NAME`, `SOURCE`,
+`TIME_SIG`, `PPQN`, `KIT`, or textual slot definitions in its 12-byte
+header.
 
----
+------------------------------------------------------------------------
 
 ## 8. Example: WLZ_0005.ADP
 
-The following example represents the same 24-step, 12-slot `LEGACY` pattern used by the ADT reference example. Every non-rest hit has accent value `3` (`o`, Medium).
+The following example represents the same 24-step, 12-slot `LEGACY`
+pattern used by the ADT reference example. Every non-rest hit has accent
+value `3` (`o`, Medium).
 
 The file is 50 bytes long:
 
-```text
+``` text
 Header  : 12 bytes
 Payload : 38 bytes
 Total   : 50 bytes
@@ -274,19 +355,19 @@ Total   : 50 bytes
 
 Decoded header:
 
-| Field | Value |
-|---|---|
-| Magic | `ADP3` |
-| Version | `23` |
-| SUBDIV code | `0` (`16`) |
-| LENGTH | `24` |
-| SLOT_MAP_ID | `0` (`LEGACY`) |
-| Payload Bytes | `38` |
-| Payload CRC16 | `0x9F48` |
+  Field           Value
+  --------------- ----------------
+  Magic           `ADP3`
+  Version         `23`
+  SUBDIV code     `0` (`16`)
+  LENGTH          `24`
+  SLOT_MAP_ID     `0` (`LEGACY`)
+  Payload Bytes   `38`
+  Payload CRC16   `0x9F48`
 
 Complete hexadecimal representation:
 
-```text
+``` text
 41 44 50 33 17 00 18 00 26 00 48 9F 01 0B 00 00
 00 02 13 2B 00 01 2B 00 02 13 23 00 01 23 00 01
 0B 00 00 00 02 13 2B 00 01 2B 00 02 13 23 00 01
@@ -295,22 +376,22 @@ Complete hexadecimal representation:
 
 Non-empty steps decoded from the payload:
 
-- Step 0: slot 1, accent 3 (`0x0B`)
-- Step 4: slot 2, accent 3 (`0x13`), slot 5, accent 3 (`0x2B`)
-- Step 6: slot 5, accent 3 (`0x2B`)
-- Step 8: slot 2, accent 3 (`0x13`), slot 4, accent 3 (`0x23`)
-- Step 10: slot 4, accent 3 (`0x23`)
-- Step 12: slot 1, accent 3 (`0x0B`)
-- Step 16: slot 2, accent 3 (`0x13`), slot 5, accent 3 (`0x2B`)
-- Step 18: slot 5, accent 3 (`0x2B`)
-- Step 20: slot 2, accent 3 (`0x13`), slot 4, accent 3 (`0x23`)
-- Step 22: slot 4, accent 3 (`0x23`)
+-   Step 0: slot 1, accent 3 (`0x0B`)
+-   Step 4: slot 2, accent 3 (`0x13`), slot 5, accent 3 (`0x2B`)
+-   Step 6: slot 5, accent 3 (`0x2B`)
+-   Step 8: slot 2, accent 3 (`0x13`), slot 4, accent 3 (`0x23`)
+-   Step 10: slot 4, accent 3 (`0x23`)
+-   Step 12: slot 1, accent 3 (`0x0B`)
+-   Step 16: slot 2, accent 3 (`0x13`), slot 5, accent 3 (`0x2B`)
+-   Step 18: slot 5, accent 3 (`0x2B`)
+-   Step 20: slot 2, accent 3 (`0x13`), slot 4, accent 3 (`0x23`)
+-   Step 22: slot 4, accent 3 (`0x23`)
 
 All other steps have `hit_count = 0`.
 
 For example:
 
-```text
+``` text
 0x0B = (1 << 3) | 3
 ```
 
@@ -318,62 +399,76 @@ Therefore `0x0B` means slot 1 with accent level 3.
 
 The calculated CRC16-CCITT of the 38-byte payload is:
 
-```text
+``` text
 0x9F48
 ```
 
 which matches the header bytes:
 
-```text
+``` text
 48 9F
 ```
 
----
+------------------------------------------------------------------------
 
 ## 9. Conformance Requirements
 
 A conforming ADP v2.3 Final writer shall:
 
-- emit the exact 12-byte header described above;
-- encode SUBDIV codes as `0=16`, `1=32`, `2=8T`, `3=16T`;
-- encode one step record for every step;
-- omit rests from hit lists;
-- restrict slot indices to 0–15;
-- restrict stored accents to 1–5;
-- encode each hit as `(slot_index << 3) | accent`;
-- keep bit 7 of every packed hit clear;
-- write hits in ascending slot-index order;
-- avoid duplicate slot indices in a step;
-- store the correct payload byte count;
-- calculate CRC16-CCITT over the payload only; and
-- use slot-map ID 255 only for INLINE maps.
+-   emit the exact 12-byte header described above;
+-   encode SUBDIV codes as `0=16`, `1=32`, `2=8T`, `3=16T`;
+-   encode one step record for every step;
+-   omit rests from hit lists;
+-   restrict slot indices to 0--15;
+-   restrict stored accents to 1--5;
+-   encode each hit as `(slot_index << 3) | accent`;
+-   keep bit 7 of every packed hit clear;
+-   write hits in ascending slot-index order;
+-   avoid duplicate slot indices in a step;
+-   store the correct payload byte count;
+-   calculate CRC16-CCITT over the payload only; and
+-   use slot-map ID 255 only when the effective map is local/INLINE,
+    including a registered base map with one or more local `SLOTn`
+    overrides.
 
 A conforming reader shall:
 
-- validate the header, payload size, and CRC;
-- recognize all four SUBDIV codes;
-- decode exactly `LENGTH` step records;
-- reject truncated or trailing payload data;
-- reject packed hits with reserved bit 7 set;
-- reject packed hits with accent 0, 6, or 7;
-- reject duplicate slot indices within a step;
-- resolve registered slot maps by numeric ID; and
-- require a same-basename companion ADT when `SLOT_MAP_ID=255`.
+-   validate the header, payload size, and CRC;
+-   recognize all four SUBDIV codes;
+-   decode exactly `LENGTH` step records;
+-   reject truncated or trailing payload data;
+-   reject packed hits with reserved bit 7 set;
+-   reject packed hits with accent 0, 6, or 7;
+-   reject duplicate slot indices within a step;
+-   resolve registered slot maps by numeric ID; and
+-   require a same-basename companion ADT when `SLOT_MAP_ID=255`,
+    resolve its registered base map, and apply any local `SLOTn`
+    overrides.
 
----
+------------------------------------------------------------------------
+
+### 9.1 Binary compatibility of local overrides
+
+Local slot overrides do not alter the ADP3 binary layout. The 12-byte
+header, packed-hit representation, payload encoding, and CRC calculation
+remain unchanged. The only binary-level effect is that a locally
+overridden map is identified by `SLOT_MAP_ID=255`.
+
+------------------------------------------------------------------------
 
 ## 10. Compatibility and Migration
 
-ADP v2.3 Final changes the packed-hit layout used by earlier development drafts:
+ADP v2.3 Final changes the packed-hit layout used by earlier development
+drafts:
 
-```text
+``` text
 Draft layout: packed_hit = (slot_index << 2) | accent
 Final layout: packed_hit = (slot_index << 3) | accent
 ```
 
 It also changes the SUBDIV code assignments by inserting Straight-32:
 
-```text
+``` text
 Final:
 0 = 16
 1 = 32
@@ -381,51 +476,60 @@ Final:
 3 = 16T
 ```
 
-Consequently, ADP files generated from pre-Final v2.3 drafts are not binary-compatible with ADP v2.3 Final, even though they may contain the same `ADP3` magic and version byte `23`.
+Consequently, ADP files generated from pre-Final v2.3 drafts are not
+binary-compatible with ADP v2.3 Final, even though they may contain the
+same `ADP3` magic and version byte `23`.
 
-Because ADP is a derived binary cache, the required migration procedure is:
+Because ADP is a derived binary cache, the required migration procedure
+is:
 
-1. retain the authoritative ADT file;
-2. delete or archive the old draft ADP file;
-3. regenerate ADP using the Final reference converter;
-4. regenerate any test vectors and CRC values;
-5. use a Final-compatible player or reader.
+1.  retain the authoritative ADT file;
+2.  delete or archive the old draft ADP file;
+3.  regenerate ADP using the Final reference converter;
+4.  regenerate any test vectors and CRC values;
+5.  use a Final-compatible player or reader.
 
-No automatic in-place conversion of draft ADP payloads is required by this specification.
+No automatic in-place conversion of draft ADP payloads is required by
+this specification.
 
----
+------------------------------------------------------------------------
 
 ## 11. Reference Implementation
 
 The Final reference encoder is:
 
-```text
+``` text
 adc-adt2adp.py
 ```
 
 Its default workflow is:
 
-```text
+``` text
 ./ADT/*.ADT -> ./ADP/*.ADP
 ```
 
 The encoder shall:
 
-- read `SUBDIV` directly from ADT;
-- support `16`, `32`, `8T`, and `16T`;
-- read the `6-accent` symbol mapping from `accent_levels.json`;
-- encode accents 1–5 without collapsing levels;
-- resolve registered maps through `slot_map_definitions.json`;
-- copy the companion ADT only when `SLOT_MAP_ID=INLINE`;
-- calculate and write the payload CRC16; and
-- reject obsolete or unsupported ADT symbols rather than silently remapping them.
+-   read `SUBDIV` directly from ADT;
+-   support `16`, `32`, `8T`, and `16T`;
+-   read the `6-accent` symbol mapping from `accent_levels.json`;
+-   encode accents 1--5 without collapsing levels;
+-   resolve registered maps through `slot_map_definitions.json`;
+-   emit `SLOT_MAP_ID=255` when the source ADT contains local `SLOTn`
+    overrides and copy the companion ADT in that case;
+-   calculate and write the payload CRC16; and
+-   reject obsolete or unsupported ADT symbols rather than silently
+    remapping them.
 
----
+------------------------------------------------------------------------
 
 ## 12. Relationship to Other ADX Formats
 
-- **ADT v2.3 Final** is the canonical human-readable grid representation.
-- **ADP v2.3 Final** is the compact binary cache generated from ADT.
-- **ORN v1.0** is an optional same-basename sidecar containing ornament and microtiming events outside the selected grid.
+-   **ADT v2.3 Final** is the canonical human-readable grid
+    representation.
+-   **ADP v2.3 Final** is the compact binary cache generated from ADT.
+-   **ORN v1.0** is an optional same-basename sidecar containing
+    ornament and microtiming events outside the selected grid.
 
-ADT remains authoritative. ADP accelerates storage and playback. ORN supplements the regular grid but does not replace or duplicate it.
+ADT remains authoritative. ADP accelerates storage and playback. ORN
+supplements the regular grid but does not replace or duplicate it.
