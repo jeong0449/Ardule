@@ -24,7 +24,7 @@ from adc_rhythm_analysis import (
     SUPPORTED_RESOLUTIONS, analyze_event_rhythm, detect_flams,
 )
 
-SCRIPT_NAME="adc-patternlab.py"; VERSION="260907c"; VERSION_TEXT=f"{SCRIPT_NAME} {VERSION}"
+SCRIPT_NAME="adc-patternlab.py"; VERSION="260907d"; VERSION_TEXT=f"{SCRIPT_NAME} {VERSION}"
 VERY_WEAK_HIT_MAX_VELOCITY=30
 if tuple(SUPPORTED_RESOLUTIONS) != ("16", "32", "8T", "16T"):
     raise RuntimeError(
@@ -1655,13 +1655,22 @@ def _adx_sim(a,b):
     return adx_compare(a,b)['combined_similarity']
 
 
-def _adx_complete_clusters(items,threshold):
+def _adx_cached_sim(items,i,j,cache):
+    if i==j: return 1.0
+    key=(i,j) if i<j else (j,i)
+    if key not in cache:
+        cache[key]=_adx_sim(items[key[0]],items[key[1]])
+    return cache[key]
+
+
+def _adx_complete_clusters(items,threshold,cache=None):
+    cache={} if cache is None else cache
     clusters=[[i] for i in range(len(items))]
     while True:
         best=None
         for a in range(len(clusters)):
             for b in range(a+1,len(clusters)):
-                vals=[_adx_sim(items[i],items[j]) for i in clusters[a] for j in clusters[b]]
+                vals=[_adx_cached_sim(items,i,j,cache) for i in clusters[a] for j in clusters[b]]
                 if vals and min(vals)>=threshold:
                     score=min(vals); key=(score,-min(clusters[a]),-min(clusters[b]))
                     if best is None or key>best[0]: best=(key,a,b)
@@ -1670,9 +1679,10 @@ def _adx_complete_clusters(items,threshold):
     return sorted(clusters,key=lambda c:min(c))
 
 
-def _adx_medoid(indices,items):
+def _adx_medoid(indices,items,cache=None):
     if len(indices)==1:return indices[0]
-    return min(indices,key=lambda i:(sum(1-_adx_sim(items[i],items[j]) for j in indices if j!=i),i))
+    cache={} if cache is None else cache
+    return min(indices,key=lambda i:(sum(1-_adx_cached_sim(items,i,j,cache) for j in indices if j!=i),i))
 
 
 def _pattern_hierarchy_html(bb):
@@ -1692,15 +1702,16 @@ def _pattern_hierarchy_html(bb):
             keys[key]=len(records); records.append(r); occurrences.append(list(bar_occ.get(int(b.pattern_no),[r['bar']])))
     if not records:
         return '<section class="pattern-hierarchy" id="pattern-hierarchy"><div class="analysis-panel"><h2>Pattern Hierarchy Analysis</h2><p class="analysis-muted">No catalogable pattern.</p></div></section>'
-    trcs=_adx_complete_clusters(records,.90); trc_m=[_adx_medoid(c,records) for c in trcs]
-    medrecs=[records[i] for i in trc_m]; cpf_local=_adx_complete_clusters(medrecs,.80)
+    record_sim_cache={}
+    trcs=_adx_complete_clusters(records,.90,record_sim_cache); trc_m=[_adx_medoid(c,records,record_sim_cache) for c in trcs]
+    medrecs=[records[i] for i in trc_m]; cpf_local=_adx_complete_clusters(medrecs,.80,{})
     cpfs=[[trcs[i] for i in c] for c in cpf_local]
     # CPF representative is deliberately chosen among TRC medoids, matching the
     # hierarchy construction unit rather than all canonical members.
     cpf_m=[]
     for local in cpf_local:
         candidates=[trc_m[i] for i in local]
-        cpf_m.append(_adx_medoid(candidates,records))
+        cpf_m.append(_adx_medoid(candidates,records,record_sim_cache))
     trc_of={i:k for k,c in enumerate(trcs,1) for i in c}
     cpf_of={i:k for k,f in enumerate(cpfs,1) for c in f for i in c}
     rows=[]
