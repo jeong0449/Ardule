@@ -19,7 +19,7 @@ Method
 - Compare only compatible strata: same meter, resolution, and step count.
 - Use adx_similarity_core.py for the frozen similarity metric.
 - Build deterministic complete-linkage groups at S >= 0.95 by default.
-- Select one medoid per group; source ADT/ORN files are never modified.
+- Select one medoid and one canonical representative per group; source ADT/ORN files are never modified.
 - Write TSV/text outputs plus a self-contained file:// HTML report.
 - Clicking any pattern grid in the HTML sends an embedded one-bar MIDI to
   play_server.py at http://127.0.0.1:8123/play.
@@ -55,11 +55,12 @@ from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
 SCRIPT_NAME = "adx-dedup-song-patterns.py"
-VERSION = "260908b"
+VERSION = "260909d"
 VERSION_TEXT = f"{SCRIPT_NAME} {VERSION}"
 
 DEFAULT_THRESHOLD = 0.95
 DEFAULT_ALPHA = 0.10
+DEFAULT_CANONICAL_FLOOR = 0.98
 PLAY_ENDPOINT = "http://127.0.0.1:8123/play"
 
 FAMILY_ORDER = ["KK", "SN", "HH", "TOM", "CYM", "PERC"]
@@ -448,6 +449,67 @@ def medoid_index(
     return min(members, key=key)
 
 
+def pattern_complexity(pattern: Pattern) -> Tuple[int, int]:
+    """Small, transparent complexity measure for canonical selection.
+
+    Lower is simpler.  The measure deliberately avoids semantic preferences
+    for particular drum voices or strength symbols: it only counts how many
+    native slots are used and the total number of hits.
+    """
+    active_slots = 0
+    total_hits = 0
+    width = len(pattern.effective_slots)
+    for slot_index in range(width):
+        seq = [row[slot_index] for row in pattern.native_steps]
+        hits = [symbol for symbol in seq if symbol != "."]
+        if hits:
+            active_slots += 1
+            total_hits += len(hits)
+    return active_slots, total_hits
+
+
+def canonical_index(
+    members: Sequence[int],
+    medoid: int,
+    patterns: Sequence[Pattern],
+    similarity_mod,
+    alpha: float,
+    cache: Dict[Tuple[int, int], Optional[Dict]],
+    floor: float,
+) -> int:
+    """Choose a simple prototype without straying far from the medoid.
+
+    Candidates must have combined similarity >= *floor* to the medoid.
+    Among those, prefer fewer active slots, then fewer total hits.
+    Similarity to the medoid breaks remaining ties.
+    """
+    if len(members) == 1:
+        return members[0]
+
+    candidates = []
+    for i in members:
+        result = pair_similarity(patterns, i, medoid, similarity_mod, alpha, cache)
+        similarity = 1.0 if i == medoid else float(result["combined_similarity"])
+        if similarity + 1e-15 >= floor:
+            candidates.append((i, similarity))
+
+    if not candidates:
+        return medoid
+
+    def key(item):
+        i, similarity = item
+        active_slots, total_hits = pattern_complexity(patterns[i])
+        return (
+            active_slots,
+            total_hits,
+            1.0 - similarity,
+            patterns[i].name,
+            patterns[i].path.name,
+        )
+
+    return min(candidates, key=key)[0]
+
+
 def _vlq(value: int) -> bytes:
     value = max(0, int(value))
     buf = [value & 0x7F]
@@ -564,18 +626,22 @@ def render_html(
     patterns: Sequence[Pattern],
     groups: Sequence[Sequence[int]],
     medoids: Sequence[int],
+    canonicals: Sequence[int],
     similarity_mod,
     alpha: float,
     threshold: float,
+    canonical_floor: float,
     cache: Dict[Tuple[int, int], Optional[Dict]],
     similarity_core_path: Path,
     slot_maps_path: Path,
 ) -> None:
     medoid_by_group = {gi: medoids[gi] for gi in range(len(groups))}
+    canonical_by_group = {gi: canonicals[gi] for gi in range(len(groups))}
     cards = []
 
     for gi, members in enumerate(groups, 1):
         medoid = medoid_by_group[gi - 1]
+        canonical = canonical_by_group[gi - 1]
         group_label = f"RDG_{gi:04d}"
         is_redundant = len(members) > 1
         member_blocks = []
@@ -587,15 +653,26 @@ def render_html(
             r_med = 1.0 if idx == medoid else float(result["rhythm_similarity"])
             strength = 1.0 if idx == medoid else result.get("strength_similarity")
             midi_b64 = base64.b64encode(midi_bytes(p)).decode("ascii")
-            role = "MEDOID" if idx == medoid else "REDUNDANT VARIANT"
-            role_cls = "medoid" if idx == medoid else "variant"
+            if idx == canonical and idx == medoid:
+                role = "CANONICAL · MEDOID"
+                role_cls = "canonical medoid"
+            elif idx == canonical:
+                role = "CANONICAL"
+                role_cls = "canonical"
+            elif idx == medoid:
+                role = "MEDOID"
+                role_cls = "medoid"
+            else:
+                role = "REDUNDANT VARIANT"
+                role_cls = "variant"
+            active_slots, total_hits = pattern_complexity(p)
             orn = "yes" if p.orn_path else "no"
             source = p.source or "—"
             genre = p.genre or "—"
             strength_text = "—" if strength is None else f"{float(strength):.3f}"
 
             member_blocks.append(f"""
-            <article class='member {role_cls}'>
+            <article class='member {role_cls}' style='--member-min:{max(500, 228 + 17 * p.length)}px'>
               <div class='member-head'>
                 <div>
                   <h3>{html.escape(p.name)}</h3>
@@ -617,6 +694,7 @@ def render_html(
                 <b>S to medoid:</b> {s_med:.3f}
                 &nbsp; · &nbsp; Rhythm {r_med:.3f}
                 &nbsp; · &nbsp; Strength {strength_text}
+                &nbsp; · &nbsp; Complexity {active_slots} slots / {total_hits} hits
                 <br><b>SOURCE:</b> <code>{html.escape(source)}</code>
                 &nbsp; · &nbsp; <b>GENRE:</b> {html.escape(genre)}
               </div>
@@ -629,10 +707,12 @@ def render_html(
         <section class='group {cls}'>
           <div class='group-head'>
             <div><h2>{group_label}</h2>
-            <div class='meta'>{len(members)} pattern(s) · medoid {html.escape(patterns[medoid].name)}</div></div>
+            <div class='meta'>{len(members)} pattern(s) · canonical {html.escape(patterns[canonical].name)} · medoid {html.escape(patterns[medoid].name)}</div></div>
             <span class='badge {cls}'>{badge}</span>
           </div>
-          {''.join(member_blocks)}
+          <div class='member-list'>
+            {''.join(member_blocks)}
+          </div>
         </section>
         """)
 
@@ -650,25 +730,29 @@ def render_html(
 :root{{--bg:#f5f6f8;--card:#fff;--ink:#20242a;--muted:#68707a;--line:#d8dde3;--accent:#2463a6;}}
 *{{box-sizing:border-box}}
 body{{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,Segoe UI,sans-serif}}
-main{{max-width:1180px;margin:26px auto;padding:0 18px}}
+main{{width:100%;max-width:none;margin:0 auto;padding:0 18px 28px}}
 h1{{margin:0 0 5px}} h2,h3{{margin:0}} code{{font-family:ui-monospace,Consolas,monospace}}
 .subtitle,.meta{{color:var(--muted);font-size:13px}}
-.summary{{display:flex;gap:10px;flex-wrap:wrap;margin:18px 0}}
+.report-header{{position:sticky;top:0;z-index:100;background:var(--bg);padding:14px 0 10px;border-bottom:1px solid var(--line)}}
+.summary{{display:flex;gap:10px;flex-wrap:wrap;margin:12px 0 0}}
 .sum{{background:#fff;border:1px solid var(--line);border-radius:9px;padding:10px 13px}}
 .sum b{{display:block;font-size:20px}}
 .group{{background:var(--card);border:1px solid var(--line);border-radius:12px;margin:15px 0;overflow:hidden}}
 .group.redundant{{border-left:5px solid #b56c24}}
 .group-head,.member-head{{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}}
 .group-head{{padding:13px 15px;background:#fafbfc;border-bottom:1px solid var(--line)}}
-.member{{padding:14px 15px;border-top:1px solid #edf0f3}}
+.member-list{{display:flex;flex-wrap:wrap;align-items:flex-start}}
+.member{{padding:14px 15px;border-top:1px solid #edf0f3;flex:1 1 var(--member-min,500px);min-width:min(var(--member-min,500px),100%)}}
 .member:first-of-type{{border-top:0}}
 .member.medoid{{background:#fbfdff}}
+.member.canonical{{background:#fbfff9}}
 .role,.badge{{font-size:11px;font-weight:800;padding:4px 7px;border-radius:999px;white-space:nowrap}}
 .role.medoid{{background:#dcecff;color:#1d558d}}
+.role.canonical{{background:#e2f5dc;color:#35652b}}
 .role.variant{{background:#fff0df;color:#8a4c11}}
 .badge.redundant{{background:#fff0df;color:#8a4c11}}
 .badge.singleton{{background:#edf1f4;color:#59616b}}
-.grid{{display:inline-block;max-width:100%;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:8px;margin-top:9px;background:#fff;cursor:pointer}}
+.grid{{display:inline-block;max-width:none;overflow:visible;border:1px solid var(--line);border-radius:8px;padding:8px;margin-top:9px;background:#fff;cursor:pointer}}
 .grid:hover,.grid:focus{{border-color:#8eafd2;box-shadow:0 0 0 2px #dceaff;outline:none}}
 .grid.playing{{border-color:#3d7dbd;box-shadow:0 0 0 2px #cfe2fb}}
 .toolbar{{display:flex;gap:9px;align-items:center;margin-bottom:6px;color:var(--muted);font-size:11px}}
@@ -687,15 +771,17 @@ footer{{padding:18px 0 28px;color:var(--muted);font-size:12px}}
 </style>
 </head>
 <body><main>
-<h1>ADX Song Pattern Deduplication</h1>
-<div class='subtitle'>{html.escape(str(adt_dir))} · complete linkage S ≥ {threshold:.3f} · α={alpha:.2f}
-· click playback: <code>{html.escape(PLAY_ENDPOINT)}</code></div>
-<div class='summary'>
-  <div class='sum'><b>{len(patterns)}</b>input patterns</div>
-  <div class='sum'><b>{len(groups)}</b>groups</div>
-  <div class='sum'><b>{redundant_groups}</b>near-duplicate groups</div>
-  <div class='sum'><b>{redundant_patterns}</b>patterns removable</div>
-  <div class='sum'><b>{representatives}</b>representatives</div>
+<div class='report-header'>
+  <h1>ADX Song Pattern Deduplication</h1>
+  <div class='subtitle'>{html.escape(str(adt_dir))} · complete linkage S ≥ {threshold:.3f} · α={alpha:.2f}
+  · canonical: S to medoid ≥ {canonical_floor:.3f}, then simplest · click playback: <code>{html.escape(PLAY_ENDPOINT)}</code></div>
+  <div class='summary'>
+    <div class='sum'><b>{len(patterns)}</b>input patterns</div>
+    <div class='sum'><b>{len(groups)}</b>groups</div>
+    <div class='sum'><b>{redundant_groups}</b>near-duplicate groups</div>
+    <div class='sum'><b>{redundant_patterns}</b>patterns removable</div>
+    <div class='sum'><b>{representatives}</b>representatives</div>
+  </div>
 </div>
 {''.join(cards)}
 <footer>
@@ -781,6 +867,13 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         "--alpha", type=float, default=DEFAULT_ALPHA,
         help=f"Strength weight passed to ADX similarity (default: {DEFAULT_ALPHA:.2f})",
     )
+    p.add_argument(
+        "--canonical-floor", type=float, default=DEFAULT_CANONICAL_FLOOR,
+        help=(
+            "Minimum similarity to the medoid for canonical candidates "
+            f"(default: {DEFAULT_CANONICAL_FLOOR:.2f})"
+        ),
+    )
     p.add_argument("--slot-maps", type=Path, default=None, help="slot_map_definitions.json")
     p.add_argument("--similarity-core", type=Path, default=None, help="adx_similarity_core.py")
     p.add_argument(
@@ -792,8 +885,16 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         help="Group TSV path (default: <ADT parent>/song_pattern_dedup_groups.tsv)",
     )
     p.add_argument(
+        "--canonicals", type=Path, default=None,
+        help="Canonical ADT list (default: <ADT parent>/song_pattern_canonicals.txt)",
+    )
+    p.add_argument(
+        "--medoids", type=Path, default=None,
+        help="Medoid ADT list (default: <ADT parent>/song_pattern_medoids.txt)",
+    )
+    p.add_argument(
         "--representatives", type=Path, default=None,
-        help="Representative ADT list (default: <ADT parent>/song_pattern_representatives.txt)",
+        help=argparse.SUPPRESS,
     )
     p.add_argument("--version", action="version", version=VERSION_TEXT)
     args = p.parse_args(argv)
@@ -802,6 +903,8 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         p.error("--threshold must be 0..1")
     if not 0.0 <= args.alpha <= 1.0:
         p.error("--alpha must be 0..1")
+    if not 0.0 <= args.canonical_floor <= 1.0:
+        p.error("--canonical-floor must be 0..1")
     return args
 
 
@@ -845,16 +948,27 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         medoid_index(group, patterns, similarity_mod, args.alpha, cache)
         for group in groups
     ]
+    canonicals = [
+        canonical_index(
+            group, medoid, patterns, similarity_mod, args.alpha, cache, args.canonical_floor
+        )
+        for group, medoid in zip(groups, medoids)
+    ]
 
     parent = adt_dir.parent
     html_path = (args.html or (parent / "song_pattern_dedup.html")).expanduser().resolve()
     tsv_path = (args.tsv or (parent / "song_pattern_dedup_groups.tsv")).expanduser().resolve()
-    representatives_path = (
-        args.representatives or (parent / "song_pattern_representatives.txt")
+    # --representatives is retained as a backward-compatible alias for --canonicals.
+    canonical_arg = args.canonicals if args.canonicals is not None else args.representatives
+    canonicals_path = (
+        canonical_arg or (parent / "song_pattern_canonicals.txt")
+    ).expanduser().resolve()
+    medoids_path = (
+        args.medoids or (parent / "song_pattern_medoids.txt")
     ).expanduser().resolve()
 
     rows = []
-    for gi, (members, medoid) in enumerate(zip(groups, medoids), 1):
+    for gi, (members, medoid, canonical) in enumerate(zip(groups, medoids, canonicals), 1):
         for idx in members:
             result = pair_similarity(patterns, idx, medoid, similarity_mod, args.alpha, cache)
             score = 1.0 if idx == medoid else float(result["combined_similarity"])
@@ -866,9 +980,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 "meter": patterns[idx].meter,
                 "resolution": patterns[idx].resolution,
                 "steps": patterns[idx].length,
+                "canonical": "yes" if idx == canonical else "no",
+                "canonical_pattern_id": patterns[canonical].name,
                 "medoid": "yes" if idx == medoid else "no",
                 "medoid_pattern_id": patterns[medoid].name,
                 "similarity_to_medoid": f"{score:.6f}",
+                "active_slots": pattern_complexity(patterns[idx])[0],
+                "hit_count": pattern_complexity(patterns[idx])[1],
                 "orn": "yes" if patterns[idx].orn_path else "no",
                 "source": patterns[idx].source,
                 "genre": patterns[idx].genre,
@@ -878,13 +996,18 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         tsv_path,
         [
             "redundancy_group", "group_size", "pattern_id", "adt_file",
-            "meter", "resolution", "steps", "medoid", "medoid_pattern_id",
-            "similarity_to_medoid", "orn", "source", "genre",
+            "meter", "resolution", "steps", "canonical", "canonical_pattern_id",
+            "medoid", "medoid_pattern_id", "similarity_to_medoid",
+            "active_slots", "hit_count", "orn", "source", "genre",
         ],
         rows,
     )
 
-    representatives_path.write_text(
+    canonicals_path.write_text(
+        "".join(f"{patterns[i].path.name}\n" for i in canonicals),
+        encoding="utf-8",
+    )
+    medoids_path.write_text(
         "".join(f"{patterns[i].path.name}\n" for i in medoids),
         encoding="utf-8",
     )
@@ -895,9 +1018,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         patterns,
         groups,
         medoids,
+        canonicals,
         similarity_mod,
         args.alpha,
         args.threshold,
+        args.canonical_floor,
         cache,
         similarity_core_path,
         slot_maps_path,
@@ -912,11 +1037,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     print(f"Complete-link groups: {len(groups)}")
     print(f"Near-duplicate groups: {redundant_groups}")
     print(f"Redundant variants  : {removable}")
-    print(f"Representatives     : {len(medoids)}")
+    print(f"Canonicals          : {len(canonicals)}")
+    print(f"Medoids             : {len(medoids)}")
+    print(f"Canonical floor     : {args.canonical_floor:.3f}")
     print(f"Threshold           : {args.threshold:.3f}")
     print(f"HTML                : {html_path}")
     print(f"TSV                 : {tsv_path}")
-    print(f"Representatives list: {representatives_path}")
+    print(f"Canonicals list     : {canonicals_path}")
+    print(f"Medoids list        : {medoids_path}")
     print(f"Similarity core     : {similarity_core_path}")
     print(f"Slot maps           : {slot_maps_path}")
     return 0
