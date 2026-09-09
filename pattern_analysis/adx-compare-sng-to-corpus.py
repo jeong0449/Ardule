@@ -7,7 +7,7 @@ and write a human-readable HTML report plus a TSV result table.
 
 Default use from a song workspace::
 
-    python adx-compare-sng-to-corpus.py ./ADT ../pattern_analysis/output [repo_root]
+    python adx-compare-sng-to-corpus.py ./ADT ../pattern_analysis/output [ardule_root]
 
 Inputs
 ------
@@ -58,7 +58,7 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 SCRIPT_NAME = "adx-compare-sng-to-corpus.py"
-VERSION = "260907i"
+VERSION = "260909e"
 VERSION_TEXT = f"{SCRIPT_NAME} {VERSION}"
 
 DEFAULT_TRC_THRESHOLD = 0.90
@@ -387,9 +387,9 @@ def locate_slot_maps(explicit: Optional[Path]) -> Path:
     here = Path(__file__).resolve().parent
     candidates = [
         here / "slot_map_definitions.json",
-        here.parent / "script" / "slot_map_definitions.json",
+        here.parent / "lib" / "slot_map_definitions.json",
         Path.cwd() / "slot_map_definitions.json",
-        Path.cwd() / "script" / "slot_map_definitions.json",
+        Path.cwd().parent / "lib" / "slot_map_definitions.json",
     ]
     for path in candidates:
         if path.is_file():
@@ -542,7 +542,12 @@ def locate_accent_levels(explicit: Optional[Path]) -> Path:
     if explicit is not None:
         return explicit
     here = Path(__file__).resolve().parent
-    candidates = [here / "accent_levels.json", here.parent / "script" / "accent_levels.json", Path.cwd() / "accent_levels.json", Path.cwd() / "script" / "accent_levels.json"]
+    candidates = [
+        here / "accent_levels.json",
+        here.parent / "lib" / "accent_levels.json",
+        Path.cwd() / "accent_levels.json",
+        Path.cwd().parent / "lib" / "accent_levels.json",
+    ]
     for path in candidates:
         if path.is_file():
             return path
@@ -596,11 +601,11 @@ def canonical_midi_bytes(rec: Dict, source_pattern: QueryPattern, accent_vel: Di
     return b"MThd" + struct.pack(">IHHH",6,0,1,ppqn) + b"MTrk" + struct.pack(">I",len(out)) + bytes(out)
 
 
-def build_playback_payloads(top_pattern_ids: Iterable[str], canonical_by_id: Dict[str, Dict], repo_root: Optional[Path], slot_maps: Dict[str, SlotMapDef], accent_vel: Dict[str, int]) -> Tuple[Dict[str, str], Dict[str, str], Dict[str, Dict]]:
+def build_playback_payloads(top_pattern_ids: Iterable[str], canonical_by_id: Dict[str, Dict], ardule_root: Optional[Path], slot_maps: Dict[str, SlotMapDef], accent_vel: Dict[str, int]) -> Tuple[Dict[str, str], Dict[str, str], Dict[str, Dict]]:
     payloads: Dict[str, str] = {}; errors: Dict[str, str] = {}; previews: Dict[str, Dict] = {}
-    if repo_root is None:
+    if ardule_root is None:
         return payloads, errors, previews
-    root = repo_root.expanduser().resolve()
+    root = ardule_root.expanduser().resolve()
     for pid in sorted(set(top_pattern_ids)):
         rec = canonical_by_id.get(pid)
         rep = rec.get("representative") if isinstance(rec, dict) else None
@@ -709,7 +714,7 @@ def _family_preview(projection: Dict) -> Dict:
 
 
 def query_playback_b64(query: QueryPattern, accent_vel: Dict[str, int]) -> str:
-    """Build playback MIDI directly from the query ADT native slots; no repository root required."""
+    """Build playback MIDI directly from the query ADT native slots; no Ardule root required."""
     rec = {
         "steps": list(query.native_steps),
         "resolution": query.resolution,
@@ -729,7 +734,7 @@ def corpus_pattern_link(pattern_id: str, projection: Optional[Dict], playback_b6
     resolution = html.escape(str(projection.get("resolution", "16")), quote=True)
     meter = html.escape(str(projection.get("meter", "")), quote=True)
     play_attr = f" data-midi='{html.escape(playback_b64, quote=True)}'" if playback_b64 else ""
-    reason = playback_error or ("" if playback_b64 else "repository root not supplied")
+    reason = playback_error or ("" if playback_b64 else "Ardule root not supplied")
     error_attr = f" data-play-error='{html.escape(reason, quote=True)}'" if reason else ""
     if playback_b64:
         title = "Hover: show native pattern · Click: play via play_server.py"
@@ -863,7 +868,7 @@ def write_html(
 :root{{--bg:#f5f6f8;--card:#fff;--text:#20242a;--muted:#68707a;--line:#dde1e6;}}
 *{{box-sizing:border-box}} body{{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,-apple-system,Segoe UI,Arial,sans-serif}}
 main{{max-width:1180px;margin:0 auto;padding:28px}} h1{{margin:0 0 4px;font-size:28px}} h2{{margin:0;font-size:20px}} .subtitle,.muted,.meta{{color:var(--muted)}}
-.summary{{display:flex;gap:10px;flex-wrap:wrap;margin:20px 0 26px}} .sum{{background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px 16px;min-width:150px}} .sum b{{font-size:24px;display:block}} .sum span{{color:var(--muted)}}
+.report-header{{position:sticky;top:0;z-index:100;background:var(--bg);padding-top:18px;border-bottom:1px solid var(--line);box-shadow:0 3px 8px #0000000c}} .summary{{display:flex;gap:10px;flex-wrap:wrap;margin:14px 0 14px}} .sum{{background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px 16px;min-width:150px}} .sum b{{font-size:24px;display:block}} .sum span{{color:var(--muted)}}
 .pattern-card{{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px;margin:0 0 18px;box-shadow:0 1px 3px #00000008}} .card-head{{display:flex;justify-content:space-between;gap:16px;align-items:flex-start}} .badge{{padding:5px 9px;border-radius:999px;font-size:12px;font-weight:700;white-space:nowrap;border:1px solid}}
 .badge.trc{{background:#edf8ef;border-color:#abd8b2}} .badge.cpf{{background:#eef5ff;border-color:#b7cff2}} .badge.close{{background:#fff8e6;border-color:#e6ca7c}} .badge.independent{{background:#fff0f0;border-color:#e3b1b1}} .badge.none{{background:#f0f1f2;border-color:#cfd3d7}}
 .grid{{display:inline-block;margin:16px 0;background:#fafafa;border:1px solid var(--line);border-radius:8px;padding:9px 11px}} .grid.hide-empty .empty-row{{display:none}} .grid-toolbar{{display:flex;justify-content:flex-end;margin:0 0 5px}} .slot-toggle{{border:1px solid #d5dae0;background:#fff;border-radius:5px;padding:2px 7px;font-size:10px;color:#59616b;cursor:pointer}} .gridrow{{display:flex;align-items:center;height:21px}} .fam{{width:42px;font:600 11px ui-monospace,SFMono-Regular,Consolas,monospace;color:#59616b}} .query-pattern .fam.native-slot{{width:138px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:8px}} .steps{{display:flex;gap:1px}} .pstep{{position:relative;width:17px;height:15px;display:inline-block;background:#fff;border:1px solid #e2e5e9;border-radius:2px}} .pstep.beat-start{{margin-left:3px;border-left:2px solid #9ca4ad}} .pstep.phit::after{{content:'';position:absolute;inset:2px;border-radius:2px;background:#28323d}} .pstep.strength-1::after{{opacity:.24}} .pstep.strength-2::after{{opacity:.40}} .pstep.strength-3::after{{opacity:.58}} .pstep.strength-4::after{{opacity:.78}} .pstep.strength-5::after{{opacity:1}} .query-pattern{{cursor:pointer;transition:box-shadow .12s,border-color .12s}} .query-pattern:hover,.query-pattern:focus{{border-color:#9db7d7;box-shadow:0 0 0 2px #dceaff;outline:none}} .query-pattern.playing{{border-color:#5488c7;box-shadow:0 0 0 2px #cfe2fb}}
@@ -874,9 +879,11 @@ footer{{color:var(--muted);padding:8px 0 30px}}
 </style>
 </head>
 <body><main>
+<header class='report-header'>
 <h1>SNG → Corpus Comparison</h1>
 <div class='subtitle'>{total} song-derived ADT pattern(s) · Hover works from file:// · Click playback uses <code>{html.escape(PLAY_SERVER_ENDPOINT)}</code></div>
 <div class='summary'>{summary_cards}</div>
+</header>
 {''.join(body_cards)}
 <footer>{html.escape(generated_note)}<br>{html.escape(VERSION_TEXT)} · Hover corpus IDs to preview; click to audition through play_server.py.</footer>
 </main>
@@ -916,7 +923,7 @@ footer{{color:var(--muted);padding:8px 0 30px}}
   async function audition(btn){{
     const midi=btn.dataset.midi;
     if(!midi){{
-      alert('Playback unavailable: '+(btn.dataset.playError||'repository root not supplied'));
+      alert('Playback unavailable: '+(btn.dataset.playError||'Ardule root not supplied'));
       return;
     }}
     try{{
@@ -967,9 +974,9 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         prog=SCRIPT_NAME,
         description="Compare SNG ADT patterns with an existing ADX corpus TRC/CPF hierarchy.",
     )
-    p.add_argument("adt_dir", type=Path, help="Directory containing SNG*.ADT files (and optional .ORN sidecars)")
-    p.add_argument("corpus_output", type=Path, help="Existing pattern_analysis/output directory")
-    p.add_argument("repo_root", type=Path, nargs="?", default=None, help="Optional repository root for corpus ADT playback; omit to disable sound")
+    p.add_argument("adt_dir", metavar="query_dir", type=Path, help="Directory containing the new SNG*.ADT patterns to compare against the existing corpus (optional same-basename .ORN sidecars are allowed)")
+    p.add_argument("corpus_output", metavar="corpus_index_dir", type=Path, help="Directory containing the existing ADX corpus analysis/index files (typically pattern_analysis/output)")
+    p.add_argument("ardule_root", metavar="ardule_root", type=Path, nargs="?", default=None, help="Optional Ardule repository root — the directory containing collections/. Used to locate original corpus ADT files for HTML preview/playback; omit if corpus playback is not needed")
     p.add_argument("--glob", default="SNG*.ADT", help="ADT filename glob (default: SNG*.ADT)")
     p.add_argument("--slot-maps", type=Path, default=None, help="slot_map_definitions.json")
     p.add_argument("--accent-levels", type=Path, default=None, help="accent_levels.json (for playback MIDI velocities)")
@@ -1138,9 +1145,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print(f"[QUERY] {query.name}: {classification} · {attach_label} · nearest {nearest_label}")
 
     top_pattern_ids = [hit["candidate_id"] for result in results for hit in result.get("top_hits", [])[:args.top]]
-    playback_payloads, playback_errors, corpus_previews = build_playback_payloads(top_pattern_ids, canonical_by_id, args.repo_root, slot_maps, accent_vel)
-    if args.repo_root is None:
-        print("[INFO] playback      : disabled (repository root not supplied)")
+    playback_payloads, playback_errors, corpus_previews = build_playback_payloads(top_pattern_ids, canonical_by_id, args.ardule_root, slot_maps, accent_vel)
+    if args.ardule_root is None:
+        print("[INFO] playback      : disabled (Ardule root not supplied)")
     else:
         print(f"[OK] playback      : {len(playback_payloads)} corpus pattern(s) prepared via play_server.py; unavailable={len(playback_errors)}")
 
