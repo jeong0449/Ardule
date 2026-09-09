@@ -7,18 +7,30 @@ and write a human-readable HTML report plus a TSV result table.
 
 Default use from a song workspace::
 
-    python adx-compare-sng-to-corpus.py ./ADT ../pattern_analysis/output [ardule_root]
+    python adx-compare-sng-to-corpus.py ./ADT_final ../pattern_analysis/output
 
 Inputs
 ------
-1. Query directory containing SNG*.ADT (optional same-basename .ORN sidecars)
-2. Existing pattern_analysis/output directory containing at least:
+1. query_dir
+   Directory containing song-derived ADT files (default glob: SNG*.ADT).
+   Same-basename .ORN sidecars are reported as metadata only.
+2. corpus_index_dir
+   Existing ADX corpus index/hierarchy directory containing:
      - search_projection.jsonl
      - canonical_patterns.jsonl
      - rhythm_cluster_members_v0.2.tsv
      - pattern_families_t080_v0.1.tsv
-3. slot_map_definitions.json (auto-located when possible; --slot-maps overrides)
-4. adx_similarity_core.py (auto-imported from repo lib/ or nearby; --similarity-core overrides)
+
+Supporting files
+----------------
+slot_map_definitions.json, accent_levels.json, and adx_similarity_core.py are
+auto-located beside the script or in ../lib; explicit options override them.
+
+Report behavior
+---------------
+Both query patterns and corpus matches are shown in native slot form. Native
+corpus patterns come directly from canonical_patterns.jsonl, so no Ardule
+source-root argument is required. Slots containing no hits are omitted.
 
 Classification semantics
 ------------------------
@@ -58,7 +70,7 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 SCRIPT_NAME = "adx-compare-sng-to-corpus.py"
-VERSION = "260909e"
+VERSION = "260909h"
 VERSION_TEXT = f"{SCRIPT_NAME} {VERSION}"
 
 DEFAULT_TRC_THRESHOLD = 0.90
@@ -601,26 +613,125 @@ def canonical_midi_bytes(rec: Dict, source_pattern: QueryPattern, accent_vel: Di
     return b"MThd" + struct.pack(">IHHH",6,0,1,ppqn) + b"MTrk" + struct.pack(">I",len(out)) + bytes(out)
 
 
-def build_playback_payloads(top_pattern_ids: Iterable[str], canonical_by_id: Dict[str, Dict], ardule_root: Optional[Path], slot_maps: Dict[str, SlotMapDef], accent_vel: Dict[str, int]) -> Tuple[Dict[str, str], Dict[str, str], Dict[str, Dict]]:
-    payloads: Dict[str, str] = {}; errors: Dict[str, str] = {}; previews: Dict[str, Dict] = {}
-    if ardule_root is None:
-        return payloads, errors, previews
-    root = ardule_root.expanduser().resolve()
+def resolve_canonical_slot_map(rec: Dict, slot_maps: Dict[str, SlotMapDef]) -> SlotMapDef:
+    """Resolve a canonical native record to a registered slot map without source ADT access."""
+    raw_id = rec.get("slot_map_id")
+    if raw_id not in (None, ""):
+        try:
+            map_id = int(raw_id)
+        except (TypeError, ValueError):
+            map_id = None
+        if map_id is not None:
+            for smap in slot_maps.values():
+                if smap.map_id == map_id:
+                    return smap
+
+    for key in ("slot_map", "slot_map_name"):
+        raw = str(rec.get(key) or "").strip().upper()
+        if raw in slot_maps:
+            return slot_maps[raw]
+
+    token = str(rec.get("slot_map_token") or "").strip().upper()
+    if token in slot_maps:
+        return slot_maps[token]
+    m = re.fullmatch(r"(?:ID[:=_-]?)?(\d+)", token)
+    if m:
+        map_id = int(m.group(1))
+        for smap in slot_maps.values():
+            if smap.map_id == map_id:
+                return smap
+
+    width = int(rec.get("slot_width") or 0)
+    if width > 0:
+        matches = [smap for smap in slot_maps.values() if len(smap.slots) == width]
+        if len(matches) == 1:
+            return matches[0]
+        legacy = slot_maps.get("LEGACY")
+        if legacy is not None and len(legacy.slots) == width:
+            return legacy
+
+    raise ValueError(
+        f"cannot resolve canonical slot map for {rec.get('pattern_id', '<unknown>')}: "
+        f"slot_map_id={raw_id!r}, slot_map_token={token!r}, slot_width={width!r}"
+    )
+
+
+def canonical_native_preview(rec: Dict, slot_map: SlotMapDef) -> Dict:
+    """Native canonical pattern preview with empty slots omitted."""
+    steps = rec.get("steps")
+    if not isinstance(steps, list) or not steps:
+        raise ValueError("canonical record has no native steps")
+    width = len(slot_map.slots)
+    if any(len(str(row)) != width for row in steps):
+        raise ValueError("canonical native step width does not match resolved slot map")
+    rows = []
+    for slot_index in range(width - 1, -1, -1):
+        seq = "".join(str(row)[slot_index] for row in steps)
+        if not any(ch != "." for ch in seq):
+            continue
+        slot = slot_map.slots[slot_index]
+        label = f"{slot.extended.replace('_', ' ').title()} ({slot.representative_midi})"
+        rows.append({"label": label, "steps": seq})
+    return {"kind": "native", "rows": rows}
+
+
+def canonical_midi_from_slot_map(rec: Dict, slot_map: SlotMapDef, accent_vel: Dict[str, int]) -> bytes:
+    """Build one-bar SMF directly from a canonical native record and its registered slot map."""
+    steps = rec.get("steps")
+    resolution = str(rec.get("resolution", "16"))
+    meter = str(rec.get("meter", "4/4"))
+    if not isinstance(steps, list) or not steps:
+        raise ValueError("canonical record has no native steps")
+    width = len(slot_map.slots)
+    if any(len(str(row)) != width for row in steps):
+        raise ValueError("canonical native step width does not match resolved slot map")
+    per_q = {"16": 4, "32": 8, "8T": 3, "16T": 6}.get(resolution)
+    if not per_q:
+        raise ValueError(f"unsupported resolution {resolution}")
+    ppqn = 240
+    step_ticks = ppqn // per_q
+    events = []
+    order = 0
+    for si, row in enumerate(steps):
+        tick = si * step_ticks
+        for slot_index, ch in enumerate(str(row)):
+            if ch == ".":
+                continue
+            vel = int(accent_vel.get(ch, 80))
+            note = slot_map.slots[slot_index].representative_midi
+            events.append((tick, order, bytes([0x99, note, vel]))); order += 1
+            events.append((tick + max(1, step_ticks // 2), order, bytes([0x89, note, 0]))); order += 1
+    try:
+        num_s, den_s = meter.split("/", 1); num, den = int(num_s), int(den_s)
+    except Exception:
+        num, den = 4, 4
+    dd = 0; d = den
+    while d > 1 and d % 2 == 0:
+        dd += 1; d //= 2
+    track_events = [(0, -2, b"\xff\x51\x03\x07\xa1\x20"), (0, -1, bytes([0xff,0x58,0x04,num,dd,24,8]))] + events
+    track_events.sort(key=lambda x: (x[0], x[1]))
+    out = bytearray(); last = 0
+    for tick, _, msg in track_events:
+        out += _vlq(tick - last) + msg; last = tick
+    total_ticks = len(steps) * step_ticks
+    out += _vlq(max(0, total_ticks - last)) + b"\xff\x2f\x00"
+    return b"MThd" + struct.pack(">IHHH", 6, 0, 1, ppqn) + b"MTrk" + struct.pack(">I", len(out)) + bytes(out)
+
+
+def build_corpus_payloads(top_pattern_ids: Iterable[str], canonical_by_id: Dict[str, Dict], slot_maps: Dict[str, SlotMapDef], accent_vel: Dict[str, int]) -> Tuple[Dict[str, str], Dict[str, str], Dict[str, Dict]]:
+    """Prepare native previews and playback directly from canonical_patterns.jsonl."""
+    payloads: Dict[str, str] = {}
+    errors: Dict[str, str] = {}
+    previews: Dict[str, Dict] = {}
     for pid in sorted(set(top_pattern_ids)):
         rec = canonical_by_id.get(pid)
-        rep = rec.get("representative") if isinstance(rec, dict) else None
-        rel = rep.get("source_relpath") if isinstance(rep, dict) else None
-        if not rel:
-            errors[pid] = "no source_relpath"; continue
-        source_path = root / Path(str(rel))
-        if not source_path.is_file():
-            errors[pid] = f"source ADT not found: {source_path}"; continue
+        if not isinstance(rec, dict):
+            errors[pid] = "canonical record not found"
+            continue
         try:
-            src = parse_adt(source_path, slot_maps)
-            payloads[pid] = base64.b64encode(canonical_midi_bytes(rec, src, accent_vel)).decode("ascii")
-            steps = rec.get("steps") if isinstance(rec, dict) else None
-            if isinstance(steps, list) and steps:
-                previews[pid] = _native_preview(src, tuple(str(row) for row in steps))
+            smap = resolve_canonical_slot_map(rec, slot_maps)
+            previews[pid] = canonical_native_preview(rec, smap)
+            payloads[pid] = base64.b64encode(canonical_midi_from_slot_map(rec, smap, accent_vel)).decode("ascii")
         except Exception as exc:
             errors[pid] = str(exc)
     return payloads, errors, previews
@@ -669,19 +780,20 @@ def _native_preview(query: QueryPattern, steps: Sequence[str]) -> Dict:
         slot_name = slot.extended.replace("_", " ").title()
         label = f"{slot_name} ({slot.representative_midi})"
         seq = "".join((row[slot_index] if slot_index < len(row) else ".") for row in steps)
+        if not any(ch != "." for ch in seq):
+            continue
         rows.append({"label": label, "steps": seq})
     return {"kind": "native", "rows": rows}
 
 
 def native_grid_html(query: QueryPattern) -> str:
-    """Render actual native ADT slots; empty rows are hidden by default and can be expanded."""
+    """Render actual native ADT slots; slots containing no hits are omitted."""
     strength = {".": 0, "-": 1, "x": 2, "o": 3, "^": 4, "@": 5}
     beat_steps = _steps_per_beat(query.meter, query.resolution)
     rows = []
     for item in _native_preview(query, query.native_steps)["rows"]:
         label = item["label"]
         seq = item["steps"]
-        empty = not any(ch != "." for ch in seq)
         cells = []
         for si, ch in enumerate(seq):
             classes = ["pstep"]
@@ -694,9 +806,8 @@ def native_grid_html(query: QueryPattern) -> str:
             cells.append(
                 f"<span class='{class_text}' title='step {si + 1} · {html.escape(label)} · {html.escape(ch)}'></span>"
             )
-        row_class = "gridrow empty-row" if empty else "gridrow"
         rows.append(
-            f"<div class='{row_class}'><span class='fam native-slot'>{html.escape(label)}</span>"
+            f"<div class='gridrow'><span class='fam native-slot'>{html.escape(label)}</span>"
             f"<span class='steps'>{''.join(cells)}</span></div>"
         )
     return "".join(rows)
@@ -729,18 +840,18 @@ def corpus_pattern_link(pattern_id: str, projection: Optional[Dict], playback_b6
     label = html.escape(pattern_id)
     if not projection:
         return f"<code>{label}</code>"
-    preview = native_preview or _family_preview(projection)
+    preview = native_preview or {"kind": "native", "rows": []}
     preview_payload = html.escape(json.dumps(preview, separators=(",", ":")), quote=True)
     resolution = html.escape(str(projection.get("resolution", "16")), quote=True)
     meter = html.escape(str(projection.get("meter", "")), quote=True)
     play_attr = f" data-midi='{html.escape(playback_b64, quote=True)}'" if playback_b64 else ""
-    reason = playback_error or ("" if playback_b64 else "Ardule root not supplied")
+    reason = playback_error or ("" if playback_b64 else "native canonical playback unavailable")
     error_attr = f" data-play-error='{html.escape(reason, quote=True)}'" if reason else ""
     if playback_b64:
         title = "Hover: show native pattern · Click: play via play_server.py"
         cls = "corpus-pattern playable"
     else:
-        title = f"Hover: show pattern · Playback unavailable: {reason}"
+        title = f"Native canonical preview/playback unavailable: {reason}"
         cls = "corpus-pattern no-play"
     return (
         f"<button type='button' class='{cls}' data-pattern='{label}' "
@@ -748,6 +859,30 @@ def corpus_pattern_link(pattern_id: str, projection: Optional[Dict], playback_b6
         f"title='{html.escape(title, quote=True)}'>{label}</button>"
     )
 
+
+
+def preview_grid_html(preview: Optional[Dict], meter: str, resolution: str) -> str:
+    """Render a serialized native preview inline; empty rows are already omitted."""
+    if not preview or preview.get("kind") != "native":
+        return "<span class='muted'>native pattern unavailable</span>"
+    strength = {".": 0, "-": 1, "x": 2, "o": 3, "^": 4, "@": 5}
+    beat_steps = _steps_per_beat(meter, resolution)
+    rows = []
+    for item in preview.get("rows", []):
+        label = str(item.get("label") or "")
+        seq = str(item.get("steps") or "")
+        cells = []
+        for si, ch in enumerate(seq):
+            classes = ["pstep"]
+            if si > 0 and si % beat_steps == 0:
+                classes.append("beat-start")
+            rank = strength.get(ch, 0)
+            if rank:
+                classes.extend(["phit", f"strength-{rank}"])
+            class_text = " ".join(classes)
+            cells.append(f"<span class='{class_text}' title='step {si + 1} · {html.escape(label)} · {html.escape(ch)}'></span>")
+        rows.append(f"<div class='gridrow'><span class='fam native-slot'>{html.escape(label)}</span><span class='steps'>{''.join(cells)}</span></div>")
+    return f"<div class='grid corpus-native'>{''.join(rows)}</div>"
 
 def fmt_score(value: Optional[float]) -> str:
     return "—" if value is None else f"{value:.3f}"
@@ -783,7 +918,7 @@ def write_html(
     queries_by_name: Dict[str, QueryPattern],
     projection_by_id: Dict[str, Dict],
     top_n: int,
-    corpus_output: Path,
+    corpus_index_dir: Path,
     trc_threshold: float,
     cpf_threshold: float,
     playback_payloads: Dict[str, str],
@@ -825,6 +960,7 @@ def write_html(
             nearest_rows.append(
                 "<tr>"
                 f"<td>{idx}</td><td>{corpus_pattern_link(hit['candidate_id'], projection_by_id.get(hit['candidate_id']), playback_payloads.get(hit['candidate_id']), playback_errors.get(hit['candidate_id'], ''), corpus_previews.get(hit['candidate_id']))}</td>"
+                f"<td>{preview_grid_html(corpus_previews.get(hit['candidate_id']), str(projection_by_id.get(hit['candidate_id'], {}).get('meter', '')), str(projection_by_id.get(hit['candidate_id'], {}).get('resolution', '16')))}</td>"
                 f"<td>{hit['similarity']:.3f}</td><td>{hit['rhythm_similarity']:.3f}</td>"
                 f"<td>{fmt_score(hit['strength_similarity'])}</td>"
                 f"<td>{html.escape(hit.get('trc_id') or '—')}</td>"
@@ -833,7 +969,7 @@ def write_html(
                 "</tr>"
             )
         nearest_table = (
-            "<table><thead><tr><th>#</th><th>Canonical</th><th>S</th><th>Rhythm</th><th>Strength</th>"
+            "<table><thead><tr><th>#</th><th>Canonical</th><th>Native pattern</th><th>S</th><th>Rhythm</th><th>Strength</th>"
             "<th>TRC</th><th>CPF</th><th>Source</th></tr></thead><tbody>"
             + "".join(nearest_rows) + "</tbody></table>"
             if nearest_rows else "<p class='muted'>No corpus pattern in the same meter/resolution/step-count stratum.</p>"
@@ -848,14 +984,14 @@ def write_html(
     <div><h2>{html.escape(q.name)}</h2><div class='meta'>{html.escape(q.path.name)} · ORN: {html.escape(orn_text)} · {html.escape(q.meter)} · {html.escape(q.resolution)} · {q.length} steps · {html.escape(q.slot_map_name)}</div></div>
     <span class='badge {css}'>{html.escape(classification)}</span>
   </div>
-  <div class='grid query-pattern playable hide-empty' role='button' tabindex='0' data-pattern='{html.escape(q.name, quote=True)}'{q_play_attr} title='Click grid to play query pattern via play_server.py'><div class='grid-toolbar'><button type='button' class='slot-toggle'>Show all slots</button></div>{native_grid_html(q)}</div>
+  <div class='grid query-pattern playable' role='button' tabindex='0' data-pattern='{html.escape(q.name, quote=True)}'{q_play_attr} title='Click grid to play query pattern via play_server.py'>{native_grid_html(q)}</div>
   <div class='decision'><b>Nearest:</b> <code>{html.escape(nearest)}</code> · S={html.escape(str(result.get('nearest_similarity') or '—'))}<br>
     <span class='source'>{html.escape(source)}</span><br>{attachment}</div>
   <details open><summary>Top {min(top_n, len(result.get('top_hits', [])))} corpus matches</summary>{nearest_table}</details>
 </section>""")
 
     generated_note = (
-        f"Corpus: {html.escape(str(corpus_output))} · TRC threshold {trc_threshold:.2f} · "
+        f"Corpus: {html.escape(str(corpus_index_dir))} · TRC threshold {trc_threshold:.2f} · "
         f"CPF threshold {cpf_threshold:.2f} · ADX family similarity v0.2"
     )
     document = f"""<!doctype html>
@@ -871,7 +1007,7 @@ main{{max-width:1180px;margin:0 auto;padding:28px}} h1{{margin:0 0 4px;font-size
 .report-header{{position:sticky;top:0;z-index:100;background:var(--bg);padding-top:18px;border-bottom:1px solid var(--line);box-shadow:0 3px 8px #0000000c}} .summary{{display:flex;gap:10px;flex-wrap:wrap;margin:14px 0 14px}} .sum{{background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px 16px;min-width:150px}} .sum b{{font-size:24px;display:block}} .sum span{{color:var(--muted)}}
 .pattern-card{{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px;margin:0 0 18px;box-shadow:0 1px 3px #00000008}} .card-head{{display:flex;justify-content:space-between;gap:16px;align-items:flex-start}} .badge{{padding:5px 9px;border-radius:999px;font-size:12px;font-weight:700;white-space:nowrap;border:1px solid}}
 .badge.trc{{background:#edf8ef;border-color:#abd8b2}} .badge.cpf{{background:#eef5ff;border-color:#b7cff2}} .badge.close{{background:#fff8e6;border-color:#e6ca7c}} .badge.independent{{background:#fff0f0;border-color:#e3b1b1}} .badge.none{{background:#f0f1f2;border-color:#cfd3d7}}
-.grid{{display:inline-block;margin:16px 0;background:#fafafa;border:1px solid var(--line);border-radius:8px;padding:9px 11px}} .grid.hide-empty .empty-row{{display:none}} .grid-toolbar{{display:flex;justify-content:flex-end;margin:0 0 5px}} .slot-toggle{{border:1px solid #d5dae0;background:#fff;border-radius:5px;padding:2px 7px;font-size:10px;color:#59616b;cursor:pointer}} .gridrow{{display:flex;align-items:center;height:21px}} .fam{{width:42px;font:600 11px ui-monospace,SFMono-Regular,Consolas,monospace;color:#59616b}} .query-pattern .fam.native-slot{{width:138px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:8px}} .steps{{display:flex;gap:1px}} .pstep{{position:relative;width:17px;height:15px;display:inline-block;background:#fff;border:1px solid #e2e5e9;border-radius:2px}} .pstep.beat-start{{margin-left:3px;border-left:2px solid #9ca4ad}} .pstep.phit::after{{content:'';position:absolute;inset:2px;border-radius:2px;background:#28323d}} .pstep.strength-1::after{{opacity:.24}} .pstep.strength-2::after{{opacity:.40}} .pstep.strength-3::after{{opacity:.58}} .pstep.strength-4::after{{opacity:.78}} .pstep.strength-5::after{{opacity:1}} .query-pattern{{cursor:pointer;transition:box-shadow .12s,border-color .12s}} .query-pattern:hover,.query-pattern:focus{{border-color:#9db7d7;box-shadow:0 0 0 2px #dceaff;outline:none}} .query-pattern.playing{{border-color:#5488c7;box-shadow:0 0 0 2px #cfe2fb}}
+.grid{{display:inline-block;margin:16px 0;background:#fafafa;border:1px solid var(--line);border-radius:8px;padding:9px 11px}} .corpus-native{{margin:0;min-width:max-content}} .gridrow{{display:flex;align-items:center;height:21px}} .fam{{width:42px;font:600 11px ui-monospace,SFMono-Regular,Consolas,monospace;color:#59616b}} .query-pattern .fam.native-slot,.corpus-native .fam.native-slot{{width:138px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:8px}} .steps{{display:flex;gap:1px}} .pstep{{position:relative;width:17px;height:15px;display:inline-block;background:#fff;border:1px solid #e2e5e9;border-radius:2px}} .pstep.beat-start{{margin-left:3px;border-left:2px solid #9ca4ad}} .pstep.phit::after{{content:'';position:absolute;inset:2px;border-radius:2px;background:#28323d}} .pstep.strength-1::after{{opacity:.24}} .pstep.strength-2::after{{opacity:.40}} .pstep.strength-3::after{{opacity:.58}} .pstep.strength-4::after{{opacity:.78}} .pstep.strength-5::after{{opacity:1}} .query-pattern{{cursor:pointer;transition:box-shadow .12s,border-color .12s}} .query-pattern:hover,.query-pattern:focus{{border-color:#9db7d7;box-shadow:0 0 0 2px #dceaff;outline:none}} .query-pattern.playing{{border-color:#5488c7;box-shadow:0 0 0 2px #cfe2fb}}
 .decision{{padding:10px 12px;background:#fafbfc;border-left:3px solid #c9ced5;margin:0 0 12px}} code{{font-family:ui-monospace,SFMono-Regular,Consolas,monospace}} details{{margin-top:8px}} summary{{cursor:pointer;font-weight:650;margin:8px 0}} table{{width:100%;border-collapse:collapse;font-size:12px}} th,td{{padding:7px 8px;border-top:1px solid var(--line);text-align:left;vertical-align:top}} th{{color:#59616b;background:#fafafa}} .source{{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12px;color:#59616b}}
 .corpus-pattern{{border:0;background:transparent;padding:1px 3px;margin:-1px -3px;border-radius:4px;color:#1557a5;text-decoration:underline;text-decoration-style:dotted;text-underline-offset:2px;cursor:pointer;font:inherit;font-family:ui-monospace,SFMono-Regular,Consolas,monospace}} .corpus-pattern:hover,.corpus-pattern:focus{{background:#edf4ff;outline:none}} .corpus-pattern.playing{{background:#dcecff;text-decoration-style:solid}} .corpus-pattern.no-play{{color:#69717a;cursor:default;text-decoration-style:dotted}}
 #pattern-tooltip{{position:fixed;z-index:9999;display:none;pointer-events:auto;background:#fff;border:1px solid #cfd5dc;border-radius:9px;padding:10px 11px;box-shadow:0 8px 28px #0002;max-width:min(96vw,640px)}} #pattern-tooltip .tt-title{{font:700 12px ui-monospace,SFMono-Regular,Consolas,monospace;margin-bottom:7px}} #pattern-tooltip .gridrow{{height:20px}} #pattern-tooltip .fam{{width:42px;font-size:10px}} #pattern-tooltip .pstep{{width:16px;height:14px}} #pattern-tooltip .fam.native-slot{{width:138px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:8px}} #pattern-tooltip.hide-empty .empty-row{{display:none}} #pattern-tooltip .grid-toolbar{{margin-bottom:6px}}
@@ -885,7 +1021,7 @@ footer{{color:var(--muted);padding:8px 0 30px}}
 <div class='summary'>{summary_cards}</div>
 </header>
 {''.join(body_cards)}
-<footer>{html.escape(generated_note)}<br>{html.escape(VERSION_TEXT)} · Hover corpus IDs to preview; click to audition through play_server.py.</footer>
+<footer>{html.escape(generated_note)}<br>{html.escape(VERSION_TEXT)} · Corpus matches are shown as native canonical patterns; click IDs or query grids to audition through play_server.py.</footer>
 </main>
 <div id='pattern-tooltip' aria-hidden='true'></div>
 <script>
@@ -923,7 +1059,7 @@ footer{{color:var(--muted);padding:8px 0 30px}}
   async function audition(btn){{
     const midi=btn.dataset.midi;
     if(!midi){{
-      alert('Playback unavailable: '+(btn.dataset.playError||'Ardule root not supplied'));
+      alert('Playback unavailable: '+(btn.dataset.playError||'native canonical playback unavailable'));
       return;
     }}
     try{{
@@ -938,7 +1074,7 @@ footer{{color:var(--muted);padding:8px 0 30px}}
   let hideTimer=null;
   function showTooltip(btn,e){{
     if(hideTimer){{clearTimeout(hideTimer);hideTimer=null;}}
-    tooltip.innerHTML=tooltipGrid(btn); tooltip.classList.add('hide-empty'); tooltip.style.display='block';
+    tooltip.innerHTML=tooltipGrid(btn); tooltip.style.display='block';
     if(e) placeTooltip(e);
   }}
   function scheduleHide(){{ if(hideTimer)clearTimeout(hideTimer); hideTimer=setTimeout(()=>{{tooltip.style.display='none';}},140); }}
@@ -958,10 +1094,8 @@ footer{{color:var(--muted);padding:8px 0 30px}}
     btn.addEventListener('click', () => audition(btn));
   }});
   document.querySelectorAll('.query-pattern').forEach(btn => {{
-    const toggle=btn.querySelector('.slot-toggle');
-    if(toggle) toggle.addEventListener('click',e=>{{e.stopPropagation(); const hidden=btn.classList.toggle('hide-empty'); toggle.textContent=hidden?'Show all slots':'Hide empty slots';}});
-    btn.addEventListener('click', e => {{ if(!e.target.closest('.slot-toggle')) audition(btn); }});
-    btn.addEventListener('keydown', e => {{ if((e.key==='Enter'||e.key===' ')&&!e.target.closest('.slot-toggle')){{ e.preventDefault(); audition(btn); }} }});
+    btn.addEventListener('click', () => audition(btn));
+    btn.addEventListener('keydown', e => {{ if(e.key==='Enter'||e.key===' '){{ e.preventDefault(); audition(btn); }} }});
   }});
 }})();
 </script>
@@ -972,15 +1106,23 @@ footer{{color:var(--muted);padding:8px 0 30px}}
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(
         prog=SCRIPT_NAME,
-        description="Compare SNG ADT patterns with an existing ADX corpus TRC/CPF hierarchy.",
+        description=(
+            "Compare a directory of song-derived ADT patterns against an existing ADX corpus "
+            "TRC/CPF hierarchy and write native-pattern HTML/TSV results."
+        ),
+        epilog=(
+            "The corpus index directory must contain search_projection.jsonl, canonical_patterns.jsonl, "
+            "rhythm_cluster_members_v0.2.tsv, and pattern_families_t080_v0.1.tsv. Corpus native patterns "
+            "and playback are reconstructed directly from canonical_patterns.jsonl, so no Ardule source-root "
+            "argument is required. Empty native slots are omitted from the report."
+        ),
     )
-    p.add_argument("adt_dir", metavar="query_dir", type=Path, help="Directory containing the new SNG*.ADT patterns to compare against the existing corpus (optional same-basename .ORN sidecars are allowed)")
-    p.add_argument("corpus_output", metavar="corpus_index_dir", type=Path, help="Directory containing the existing ADX corpus analysis/index files (typically pattern_analysis/output)")
-    p.add_argument("ardule_root", metavar="ardule_root", type=Path, nargs="?", default=None, help="Optional Ardule repository root — the directory containing collections/. Used to locate original corpus ADT files for HTML preview/playback; omit if corpus playback is not needed")
+    p.add_argument("query_dir", type=Path, help="Directory containing the song-derived ADT files to compare (default glob: SNG*.ADT; same-basename .ORN sidecars are metadata only)")
+    p.add_argument("corpus_index_dir", type=Path, help="Existing ADX corpus index/hierarchy directory (typically pattern_analysis/output)")
     p.add_argument("--glob", default="SNG*.ADT", help="ADT filename glob (default: SNG*.ADT)")
-    p.add_argument("--slot-maps", type=Path, default=None, help="slot_map_definitions.json")
-    p.add_argument("--accent-levels", type=Path, default=None, help="accent_levels.json (for playback MIDI velocities)")
-    p.add_argument("--similarity-core", type=Path, default=None, help="adx_similarity_core.py")
+    p.add_argument("--slot-maps", type=Path, default=None, help="Path to slot_map_definitions.json (default: auto-search beside the script, then ../lib)")
+    p.add_argument("--accent-levels", type=Path, default=None, help="Path to accent_levels.json for playback velocities (default: auto-search beside the script, then ../lib)")
+    p.add_argument("--similarity-core", type=Path, default=None, help="Path to adx_similarity_core.py (default: auto-search beside the script, then ../lib)")
     p.add_argument("--top", type=int, default=DEFAULT_TOP, help=f"Nearest corpus matches shown per query (default: {DEFAULT_TOP})")
     p.add_argument("--alpha", type=float, default=0.10, help="Strength weight used by ADX similarity (default: 0.10)")
     p.add_argument("--trc-threshold", type=float, default=DEFAULT_TRC_THRESHOLD, help="Strict TRC attachment threshold (default: 0.90)")
@@ -1000,12 +1142,12 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args = parse_args(argv)
-    if not args.adt_dir.is_dir():
-        fail(f"ADT directory not found: {args.adt_dir}")
-    if not args.corpus_output.is_dir():
-        fail(f"corpus output directory not found: {args.corpus_output}")
+    if not args.query_dir.is_dir():
+        fail(f"ADT directory not found: {args.query_dir}")
+    if not args.corpus_index_dir.is_dir():
+        fail(f"corpus output directory not found: {args.corpus_index_dir}")
 
-    corpus_files = validate_corpus_files(args.corpus_output)
+    corpus_files = validate_corpus_files(args.corpus_index_dir)
     slot_map_path = locate_slot_maps(args.slot_maps)
     similarity_path = locate_similarity_core(args.similarity_core)
     similarity_mod = load_similarity_module(similarity_path)
@@ -1013,9 +1155,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     accent_path = locate_accent_levels(args.accent_levels)
     accent_vel = load_accent_velocities(accent_path)
 
-    query_paths = sorted(args.adt_dir.glob(args.glob), key=lambda p: p.name.casefold())
+    query_paths = sorted(args.query_dir.glob(args.glob), key=lambda p: p.name.casefold())
     if not query_paths:
-        fail(f"no ADT files matching {args.glob!r} in {args.adt_dir}")
+        fail(f"no ADT files matching {args.glob!r} in {args.query_dir}")
     queries = [parse_adt(path, slot_maps) for path in query_paths]
     names = [q.name for q in queries]
     if len(set(names)) != len(names):
@@ -1059,8 +1201,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         trc_to_family[cid] = fid
 
     print(VERSION_TEXT)
-    print(f"[OK] queries       : {args.adt_dir} ({len(queries)} ADT)")
-    print(f"[OK] corpus output : {args.corpus_output}")
+    print(f"[OK] queries       : {args.query_dir} ({len(queries)} ADT)")
+    print(f"[OK] corpus output : {args.corpus_index_dir}")
     print(f"[OK] corpus canon  : {len(projections)}")
     print(f"[OK] TRCs          : {len(cluster_members)}")
     print(f"[OK] CPFs          : {len(family_trcs)}")
@@ -1145,11 +1287,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print(f"[QUERY] {query.name}: {classification} · {attach_label} · nearest {nearest_label}")
 
     top_pattern_ids = [hit["candidate_id"] for result in results for hit in result.get("top_hits", [])[:args.top]]
-    playback_payloads, playback_errors, corpus_previews = build_playback_payloads(top_pattern_ids, canonical_by_id, args.ardule_root, slot_maps, accent_vel)
-    if args.ardule_root is None:
-        print("[INFO] playback      : disabled (Ardule root not supplied)")
-    else:
-        print(f"[OK] playback      : {len(playback_payloads)} corpus pattern(s) prepared via play_server.py; unavailable={len(playback_errors)}")
+    playback_payloads, playback_errors, corpus_previews = build_corpus_payloads(top_pattern_ids, canonical_by_id, slot_maps, accent_vel)
+    print(f"[OK] corpus native : {len(corpus_previews)} pattern preview(s) prepared; unavailable={len(playback_errors)}")
+    print(f"[OK] playback      : {len(playback_payloads)} corpus pattern(s) prepared via play_server.py; unavailable={len(playback_errors)}")
 
     query_playback_payloads: Dict[str, str] = {}
     for q in queries:
@@ -1161,7 +1301,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     write_tsv(args.tsv, results)
     write_html(
-        args.html, results, queries_by_name, projection_by_id, args.top, args.corpus_output,
+        args.html, results, queries_by_name, projection_by_id, args.top, args.corpus_index_dir,
         args.trc_threshold, args.cpf_threshold, playback_payloads, playback_errors,
         query_playback_payloads,
         corpus_previews,

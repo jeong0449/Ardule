@@ -12,19 +12,25 @@ SEARCH_FAMILY projection using the frozen Phase-4 v0.2 metric.
 The query ADT is read-only and is NOT added to the canonical vocabulary.
 No IDX is assigned to the query.
 
-Default repository layout
--------------------------
-Ardule/
-└─ indexing/
-   ├─ adx_build_index_v0.4.py
-   ├─ adx_build_vocabulary_v0.1.py
-   ├─ adx_build_projection_v0.2.py
-   ├─ adx_build_similarity_v0.2.py
-   ├─ adx-search-adt.py
-   ├─ slot_map_definitions.json
-   └─ output/
-      ├─ search_projection.jsonl
-      └─ occurrences.tsv
+Default use
+-----------
+    python ./adx-search-adt.py QUERY.ADT ./output
+
+Inputs
+------
+1. query_adt
+   One external/unindexed ADT file to search.
+2. corpus_index_dir
+   Existing ADX corpus index directory containing:
+     - search_projection.jsonl
+     - canonical_patterns.jsonl
+     - occurrences.tsv (optional provenance labels)
+
+Supporting files
+----------------
+slot_map_definitions.json is auto-located beside the script or in ../lib.
+The authoritative ADX build/projection/similarity Python modules remain sibling
+scripts and are imported rather than duplicated.
 
 ADT query behavior
 ------------------
@@ -46,14 +52,23 @@ where rhythm is the frozen weighted fuzzy-Dice metric and strength is computed
 only on exact co-located family hits. If there is no strength evidence,
 combined falls back to rhythm.
 
+Report behavior
+---------------
+An interactive HTML report is written by default. Corpus matches are shown in
+their native canonical slot representation; slots containing no hits are omitted.
+Use --open to open the report automatically, or --no-report to suppress it.
+
 Examples
 --------
-    python .\\adx-search-adt.py C:\\tmp\\NEW_001.ADT
-    python .\\adx-search-adt.py C:\\tmp\\NEW_001.ADT --top 10
-    python .\\adx-search-adt.py C:\\tmp\\TWO_BAR.ADT --bar B
-    python .\\adx-search-adt.py C:\\tmp\\NEW_001.ADT --write
+    python ./adx-search-adt.py ./TMP_0024.ADT ./output
+    python ./adx-search-adt.py ./TMP_0024.ADT ./output --top 10
+    python ./adx-search-adt.py ./TWO_BAR.ADT ./output --bar B
+    python ./adx-search-adt.py ./TMP_0024.ADT ./output --open
+    python ./adx-search-adt.py ./TMP_0024.ADT ./output --write
 
-Pattern Studio ORIENTATION=SLOT grids are transposed to normalized time-major form.\n\nThis script deliberately imports the authoritative Phase-1/2/3/4 modules
+Pattern Studio ORIENTATION=SLOT grids are transposed to normalized time-major form.
+
+This script deliberately imports the authoritative Phase-1/2/3/4 modules
 instead of duplicating their parsing, native identity, projection, and
 similarity rules.
 """
@@ -75,7 +90,7 @@ from typing import Dict, List, Tuple
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 SCRIPT_NAME = "adx-search-adt.py"
-VERSION = "260909c"
+VERSION = "260909e"
 VERSION_TEXT = f"{SCRIPT_NAME} {VERSION}"
 
 DEFAULT_ALPHA = 0.10
@@ -591,15 +606,23 @@ def family_grid_html(proj: Dict, query_proj: Dict = None) -> str:
 
 
 def native_grid_html(rec: Dict, slot_map: Dict) -> str:
-    spq=SUBDIV_SPQ.get(str(rec["resolution"]),4); steps=list(rec["steps"])
-    slots=sorted(slot_map["slots"],key=lambda x:int(x.get("slot",0))); rows=[]
-    for slot_no in range(len(slots)-1,-1,-1):
-        slot=slots[slot_no]; cells=[]
-        for step_no,row in enumerate(steps):
-            sym=row[slot_no]; cls={".":"rest","-":"vweak","x":"weak","o":"medium","^":"strong","@":"accent"}.get(sym,"rest")
-            if step_no%spq==0: cls += " beat"
-            cells.append(f'<td class="{cls}">{"" if sym=="." else html.escape(sym)}</td>')
-        abbrev=str(slot.get("abbrev") or slot.get("extended") or slot_no)
+    """Render native canonical slots, omitting slots that contain no hits."""
+    spq = SUBDIV_SPQ.get(str(rec["resolution"]), 4)
+    steps = list(rec["steps"])
+    slots = sorted(slot_map["slots"], key=lambda x: int(x.get("slot", 0)))
+    rows = []
+    for slot_no in range(len(slots) - 1, -1, -1):
+        seq = [row[slot_no] for row in steps]
+        if not any(sym != "." for sym in seq):
+            continue
+        slot = slots[slot_no]
+        cells = []
+        for step_no, sym in enumerate(seq):
+            cls = {".": "rest", "-": "vweak", "x": "weak", "o": "medium", "^": "strong", "@": "accent"}.get(sym, "rest")
+            if step_no % spq == 0:
+                cls += " beat"
+            cells.append(f'<td class="{cls}">{"" if sym == "." else html.escape(sym)}</td>')
+        abbrev = str(slot.get("abbrev") or slot.get("extended") or slot_no)
         rows.append(f'<tr><th>{html.escape(abbrev)}</th>{"".join(cells)}</tr>')
     return f'<table class="pattern-grid"><tbody>{"".join(rows)}</tbody></table>'
 
@@ -627,7 +650,7 @@ def report_card(title, provenance, native_rec, slot_map, family_proj, score=None
 
 def default_report_path(adt_path: Path, output_dir: Path) -> Path:
     safe="".join(c if c.isalnum() or c in "-_" else "_" for c in adt_path.stem)
-    return output_dir/f"search_{safe}_v0.2_report.html"
+    return output_dir / f"search_{safe}_report.html"
 
 
 def write_html_report(report_path, adt_path, structure, results_by_bar, pid_sources, canonical_by_id, projection_by_id, projection_mod, slot_map_path, top, alpha):
@@ -655,18 +678,25 @@ def parse_args(argv=None):
     p = argparse.ArgumentParser(
         prog=SCRIPT_NAME,
         description=(
-            "Search one new/unindexed ADT file against the existing ADX corpus canonical index."
+            "Search one external ADT pattern against an existing ADX corpus and write an "
+            "interactive native-pattern comparison report."
+        ),
+        epilog=(
+            "The corpus index directory must contain search_projection.jsonl and "
+            "canonical_patterns.jsonl; occurrences.tsv is used when present for provenance labels. "
+            "Native corpus patterns are read from canonical_patterns.jsonl, so no Ardule source-root "
+            "argument is required. Empty native slots are omitted from the report."
         ),
     )
     p.add_argument(
-        "adt", metavar="query_adt", type=Path,
-        help="Single ADT file to compare against the existing corpus",
+        "query_adt", type=Path,
+        help="Single external/unindexed ADT file to compare against the existing corpus",
     )
     p.add_argument(
         "corpus_index_dir", type=Path,
         help=(
-            "Directory containing the existing ADX corpus analysis/index files "
-            "(typically pattern_analysis/output)"
+            "Existing ADX corpus index directory (typically pattern_analysis/output); "
+            "must contain search_projection.jsonl and canonical_patterns.jsonl"
         ),
     )
     p.add_argument("--bar", choices=["A", "B", "a", "b"], help="For a 2-bar AB query, search only bar A or B")
@@ -674,7 +704,7 @@ def parse_args(argv=None):
     p.add_argument("--alpha", type=float, default=DEFAULT_ALPHA, help="Strength blend weight used by ADX similarity (default: 0.10)")
     p.add_argument(
         "--slot-maps", type=Path, default=None,
-        help="Path to slot_map_definitions.json; auto-searches beside the script and ../lib",
+        help="Path to slot_map_definitions.json (default: auto-search beside the script, then ../lib)",
     )
     p.add_argument(
         "--output-dir", type=Path, default=Path("."),
@@ -691,7 +721,7 @@ def parse_args(argv=None):
     )
     p.add_argument(
         "--report-path", type=Path, default=None,
-        help="Optional explicit HTML report path (default: output-dir/search_<query>_v0.2_report.html)",
+        help="Optional explicit HTML report path (default: output-dir/search_<query>_report.html)",
     )
     p.add_argument("--version", action="version", version=VERSION_TEXT)
     return p.parse_args(argv)
@@ -707,7 +737,7 @@ def main(argv=None):
         print("ERROR: --alpha must be between 0 and 1", file=sys.stderr)
         return 2
 
-    adt_path = args.adt.expanduser().resolve()
+    adt_path = args.query_adt.expanduser().resolve()
     if not adt_path.is_file():
         print(f"ERROR: ADT file not found: {adt_path}", file=sys.stderr)
         return 2
