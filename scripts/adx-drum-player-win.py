@@ -35,7 +35,7 @@ except ImportError:
     mido = None
 
 SCRIPT_NAME = "adx-drum-player-win.py"
-VERSION = "260907a"
+VERSION = "260909a"
 VERSION_TEXT = f"{SCRIPT_NAME} {VERSION}"
 
 ADT_VERSION_LINE = "; ADT v2.3"
@@ -934,6 +934,9 @@ def print_ascii_pattern(pattern: Pattern, show_all_slots: bool = False) -> None:
         note = pattern.slot_notes[slot]
         label = f"{abbrev}  {full_name:<{full_width}}  {note:>3}"
         print(f"{label} {row_grids[slot]}")
+
+    print()
+    print("Strength  : - < x < o < ^ < @   (. = rest)")
 
 def print_pattern_info(pattern: Pattern, bpm: float, repeat_text: str,
                        ornament: Optional[OrnamentSidecar]) -> None:
