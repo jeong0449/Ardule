@@ -1,6 +1,7 @@
 # ADX Drum Pattern Analysis
 
 **First created:** 2026-09-04
+**Updated:** 2026-09-09
 
 Pattern analysis tools for the **Ardule Drum Patternology** project.
 
@@ -183,51 +184,164 @@ The retained output snapshot includes the normalized corpus, canonical vocabular
 
 ---
 
-## Similarity search
+## Similarity search and song-pattern analysis
 
-Two search tools are provided.
+The current tools distinguish three different analysis purposes: searching the corpus with a single external pattern, deduplicating a set of song-derived patterns without consulting the corpus, and comparing a set of song-derived patterns against the existing corpus hierarchy.
 
-### Search an indexed pattern
+### Terminology
 
-```text
-adx_search_similar_v0.7a.py
-```
+**TRC (Tight Rhythm Cluster)** is a strict cluster of highly similar patterns. The current TRC threshold is **0.90**, using complete-linkage logic: all members must satisfy the cluster similarity criterion rather than merely being close to one central pattern.
 
-This searches for patterns similar to an ADT pattern already represented in the indexed corpus.
-
-It provides native and family-level views, visual difference inspection, and MIDI audition.
-
-### Search a new ADT pattern
+**CPF (Canonical Pattern Family)** is a broader family above the TRC level. Related TRCs are grouped by comparing their representative medoids, using the current family threshold of **0.80**. The resulting hierarchy is therefore:
 
 ```text
-adx_search_adt_v0.2a.py
+Pattern → TRC → CPF
 ```
 
-This accepts an ADT file that is **not already indexed**.
+A **medoid** is an observed, playable pattern that is geometrically central to a group: it minimizes the total distance to the other members under the current similarity model. It is an algorithmic representative.
+
+A **canonical** is an observed, playable pattern selected as the preferred library representative. It need not be identical to the medoid. Canonical selection may favor a simpler representative among patterns sufficiently close to the medoid, while the medoid remains the mathematical center of the group.
+
+In short:
+
+```text
+medoid    = geometric representative of a group
+canonical = selected library representative
+TRC       = tight group of highly similar patterns
+CPF       = broader family of related TRCs
+```
+
+### 1. Search the corpus with one ADT pattern
+
+Use `adx-search-adt.py` when the question is:
+
+> "What patterns already in the corpus are most similar to this pattern?"
 
 Example:
 
 ```powershell
-python .\adx_search_adt_v0.2a.py C:\tmp\NEW_PATTERN.ADT
+python .\adx-search-adt.py .\SNG_0035.ADT .\output\
 ```
 
-To specify the number of results:
+The first positional argument is a single query ADT file. The second is the existing corpus analysis directory.
+
+The default HTML report is:
+
+```text
+search_SNG_0035_report.html
+```
+
+The query is normalized and projected using the same rules as the corpus, but it is **not added to the corpus**. Similarity is calculated against compatible corpus canonical patterns. The report presents the query and matching patterns in their native representation and supports audition of the pattern cards.
+
+For ordinary similarity search, the essential corpus files under `output/` are:
+
+```text
+search_projection.jsonl
+canonical_patterns.jsonl
+```
+
+This is a **one-pattern → corpus** operation. It answers a retrieval question and does not deduplicate a song or assign all of its patterns to the corpus hierarchy.
+
+### 2. Deduplicate a set of song-derived ADT patterns
+
+Use `adx-dedup-song-patterns.py` when the question is:
+
+> "Which of the patterns extracted from this song are effectively the same pattern or close variants of one another?"
+
+Example:
 
 ```powershell
-python .\adx_search_adt_v0.2a.py C:\tmp\NEW_PATTERN.ADT --top 20
+python .\adx-dedup-song-patterns.py .\ADT
 ```
 
-To generate an interactive HTML report:
+This analysis is deliberately **independent of the existing corpus/library**. It compares the ADT files in the supplied directory with one another and groups redundant or near-redundant song patterns.
+
+The main outputs are:
+
+```text
+HTML            : song_pattern_dedup.html
+TSV             : song_pattern_dedup_groups.tsv
+Canonicals list : song_pattern_canonicals.txt
+Medoids list    : song_pattern_medoids.txt
+```
+
+The medoid and canonical have different roles here. The medoid records the mathematical center of each deduplication group, whereas the canonical is the pattern selected as the preferred representative to retain or carry forward. Thus deduplication does not simply mean "keep the medoid."
+
+This is a **many-pattern → within-song** operation:
+
+```text
+song-derived ADTs
+      ↓
+within-song comparison
+      ↓
+dedup groups
+      ├─ medoid
+      └─ canonical
+```
+
+No corpus search is required for this step.
+
+### 3. Compare a set of song-derived patterns with the corpus
+
+Use `adx-compare-sng-to-corpus.py` when the question is:
+
+> "How do the patterns found in this song relate to the TRC/CPF structure already present in the corpus?"
+
+Example:
 
 ```powershell
-python .\adx_search_adt_v0.2a.py C:\tmp\NEW_PATTERN.ADT --report
+python .\adx-compare-sng-to-corpus.py .\ADT .\output\
 ```
 
-The external pattern is normalized and projected using the same rules as the indexed corpus, but it is **not added to the index**.
+The first positional argument is the directory containing the song-derived ADT files. The second is the existing corpus analysis directory.
 
-Search is restricted to patterns with the same meter, subdivision/resolution, and number of steps.
+The outputs are:
 
-At the present corpus size, similarity is calculated directly against all compatible canonical patterns. Approximate nearest-neighbor infrastructure such as FAISS is therefore unnecessary.
+```text
+[DONE] HTML: SNG_corpus_comparison.html
+[DONE] TSV : SNG_corpus_comparison.tsv
+```
+
+Unlike simple nearest-neighbor search, this analysis interprets each song pattern in relation to the existing corpus hierarchy. A pattern may attach to an existing TRC, fall within a broader existing CPF without joining a TRC, have a close corpus precedent, or remain comparatively independent.
+
+The corpus comparison therefore requires the search data plus the TRC/CPF hierarchy:
+
+```text
+search_projection.jsonl
+canonical_patterns.jsonl
+rhythm_cluster_members_v0.2.tsv
+pattern_families_t080_v0.1.tsv
+```
+
+This is a **many-pattern → corpus hierarchy** operation.
+
+### Choosing the right command
+
+| Analysis purpose | Input | Corpus required? | Command |
+| --- | --- | --- | --- |
+| Find corpus patterns similar to one ADT | one ADT | Yes | `adx-search-adt.py` |
+| Remove/review redundancy within one song's extracted patterns | ADT directory | No | `adx-dedup-song-patterns.py` |
+| Place many song-derived patterns relative to existing TRCs/CPFs | ADT directory | Yes | `adx-compare-sng-to-corpus.py` |
+
+A typical song-analysis workflow can therefore be written as:
+
+```text
+song-derived ADTs
+      │
+      ├─ adx-dedup-song-patterns.py
+      │      → identify within-song redundancy
+      │      → select song canonicals
+      │
+      └─ adx-compare-sng-to-corpus.py
+             → compare song patterns with existing TRC/CPF hierarchy
+
+single pattern of interest
+      │
+      └─ adx-search-adt.py
+             → retrieve Top-N similar corpus canonicals
+```
+
+These tools analyze against the current corpus state; they do **not** themselves rebuild or update the corpus index. The corpus-building commands are being maintained separately.
 
 ---
 
